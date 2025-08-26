@@ -14,35 +14,10 @@ import * as yaml from 'yaml';
  * as GitHub Release assets.
  */
 export interface HelmPluginConfig extends PluginConfig {
-  /**
-   * Relative path to the chart directory containing Chart.yaml.
-   * Example: "charts/myapp".
-   */
   chartPath: string;
-
-  /**
-   * Optional OCI repository target (e.g., "oci://ghcr.io/acme/charts").
-   * If set, the plugin will push packaged charts to this repository.
-   */
   ociRepo?: string;
-
-  /**
-   * Optional extra CLI arguments forwarded to `helm-docs`. Example:
-   * ["--sort-values", "--template-files", "README.md.gotmpl"].
-   */
   docsArgs?: string[];
-
-  /**
-   * Docker image to run Helm CLI from. Defaults to a recent alpine/helm
-   * image. Override to pin an exact version for reproducibility.
-   * Example: "alpine/helm:3.15.2".
-   */
   helmImage?: string;
-
-  /**
-   * Docker image to run helm-docs from. Defaults to the official image.
-   * Example: "jnorwood/helm-docs:v1.14.2".
-   */
   docsImage?: string;
 }
 
@@ -57,9 +32,9 @@ export interface ChartYaml {
 }
 
 /**
- * Execute a host shell command and return trimmed stdout. The command and
- * its output are forwarded to the semantic-release logger. An error is
- * thrown when the command exits with a non-zero status.
+ * Execute a host shell command and return trimmed stdout. On failure,
+ * logs stdout/stderr and throws the original error so callers see the
+ * exact underlying problem (e.g., helm lint diagnostics).
  *
  * @param cmd The command line to run, exactly as it would be typed.
  * @param cwd The working directory for command execution.
@@ -80,21 +55,49 @@ function runHostCmd(
       logger.log('(no output)');
     }
     return out.trim();
-  } catch (err) {
-    if (err instanceof Error) {
-      logger.error(`Command failed: ${cmd}`);
-      logger.error(err.message);
-    } else {
-      logger.error(`Command failed: ${cmd}`);
+  } catch (err: unknown) {
+    logger.error(`Command failed: ${cmd}`);
+    if (typeof err === 'object' && err !== null) {
+      const maybe: {
+        stdout?: string | Buffer;
+        stderr?: string | Buffer;
+        message?: string;
+      } = err as {
+        stdout?: string | Buffer;
+        stderr?: string | Buffer;
+        message?: string;
+      };
+      const out: string =
+        typeof maybe.stdout === 'string'
+          ? maybe.stdout
+          : Buffer.isBuffer(maybe.stdout)
+            ? maybe.stdout.toString('utf8')
+            : '';
+      const errOut: string =
+        typeof maybe.stderr === 'string'
+          ? maybe.stderr
+          : Buffer.isBuffer(maybe.stderr)
+            ? maybe.stderr.toString('utf8')
+            : '';
+      if (out.trim().length > 0) {
+        logger.error(out.trim());
+      }
+      if (errOut.trim().length > 0) {
+        logger.error(errOut.trim());
+      }
+      if (maybe.message !== undefined && maybe.message.length > 0) {
+        logger.error(maybe.message);
+      }
     }
     throw err;
   }
 }
 
 /**
- * Run a Dockerized CLI with the given image and arguments. The repository
- * root is mounted at /apps and used as the container working directory.
- * All stdout is logged; failures throw.
+ * Run a Dockerized CLI with the given image and arguments. The repo root
+ * is mounted at /apps and used as the container working directory. Adds
+ * a host-gateway mapping so containers can reach host services via the
+ * host.docker.internal name on Linux/macOS/Windows.
  *
  * @param image The Docker image name:tag to execute.
  * @param args The arguments passed to the container entrypoint.
@@ -109,6 +112,7 @@ function runDockerCmd(
 ): void {
   const full: string = [
     'docker run --rm',
+    '--add-host=host.docker.internal:host-gateway',
     `-v ${cwd}:/apps`,
     '-w /apps',
     image,
@@ -135,7 +139,7 @@ function verifyDockerImage(image: string, logger: Context['logger']): void {
     } else {
       logger.log('(no output)');
     }
-  } catch (err) {
+  } catch (err: unknown) {
     if (err instanceof Error) {
       throw new SemanticReleaseError(
         `Failed to pull Docker image: ${image}`,
@@ -255,7 +259,13 @@ export async function prepare(
 
     const docsImage: string =
       pluginConfig.docsImage ?? 'jnorwood/helm-docs:v1.14.2';
-    const docsArgs: string[] = pluginConfig.docsArgs ?? [];
+
+    // Default to using README.md as the template to avoid requiring .gotmpl
+    const docsArgs: string[] = pluginConfig.docsArgs ?? [
+      '--template-files',
+      'README.md',
+    ];
+
     try {
       void runDockerCmd(
         docsImage,
@@ -270,7 +280,7 @@ export async function prepare(
 
     const outDir: string = `${cwd}/dist/charts`;
     if (fs.existsSync(outDir)) {
-      // directory exists; reuse
+      // reuse directory
     } else {
       fs.mkdirSync(outDir, { recursive: true });
     }
@@ -335,8 +345,4 @@ export async function publish(
   }
 }
 
-/**
- * Default export matching semantic-release plugin loading. Exposes the
- * verifyConditions, prepare, and publish lifecycles.
- */
 export default { verifyConditions, prepare, publish };

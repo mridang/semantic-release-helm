@@ -1,6 +1,6 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: { { include "app.fullname" . } }
+  name: { { .Chart.Name } }
 data:
   hello: 'world'
