@@ -15,7 +15,7 @@ import * as yaml from 'yaml';
  * push it to an OCI registry.
  */
 export interface HelmPluginConfig extends PluginConfig {
-  /** Path to the chart directory (relative to project root). */
+  /** Path to the chart directory (relative to the project root). */
   chartPath: string;
   /** OCI repository URL (e.g. `oci://registry:5000/charts`). */
   ociRepo?: string;
@@ -89,7 +89,7 @@ function runHostCmd(
  * Run a Dockerized command, mounting the given `cwd` into `/apps`
  * and using it as the working directory.
  *
- * @param image Docker image to run (e.g. Helm or helm-docs).
+ * @param image Docker image to run (e.g., Helm or helm-docs).
  * @param args  Arguments to pass to the container entrypoint.
  * @param cwd   Host working directory, mounted into `/apps`.
  * @param logger Logger for structured command output.
@@ -190,7 +190,7 @@ function setChartVersion(rawYaml: string, version: string): string {
  * and Chart.yaml exists at the configured path.
  *
  * @param pluginConfig Helm plugin configuration.
- * @param context Semantic-release context (logger, cwd, etc).
+ * @param context Semantic-release context (logger, cwd, etc.).
  * @throws SemanticReleaseError if requirements are missing.
  */
 export async function verifyConditions(
@@ -232,7 +232,7 @@ export async function verifyConditions(
 }
 
 /**
- * Prepare step: bump chart version, lint and template the chart,
+ * Prepare step: bump the chart version, lint and template the chart,
  * run helm-docs, and package into `dist/charts`.
  *
  * @param pluginConfig Helm plugin configuration.
