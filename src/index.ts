@@ -7,23 +7,51 @@ import SemanticReleaseError from '@semantic-release/error';
 import { execSync } from 'node:child_process';
 import * as yaml from 'yaml';
 
+/**
+ * Configuration for the Helm semantic-release plugin.
+ *
+ * The plugin updates the chart version, validates the chart with Helm,
+ * runs `helm-docs` for README generation, packages the chart, and can
+ * push it to an OCI registry.
+ */
 export interface HelmPluginConfig extends PluginConfig {
+  /** Path to the chart directory (relative to project root). */
   chartPath: string;
+  /** OCI repository URL (e.g. `oci://registry:5000/charts`). */
   ociRepo?: string;
+  /** If true, mark the OCI registry as insecure (HTTP/plain). */
   ociInsecure?: boolean;
+  /** Username for OCI login. If omitted, defaults to "anonymous". */
   ociUsername?: string;
+  /** Password for OCI login. If omitted, defaults to "anonymous". */
   ociPassword?: string;
+  /** Extra arguments for `helm-docs` invocation. */
   docsArgs?: string[];
+  /** Docker image for Helm CLI. Defaults to `alpine/helm:3.15.2`. */
   helmImage?: string;
+  /** Docker image for helm-docs CLI. Defaults to `jnorwood/helm-docs:v1.14.2`. */
   docsImage?: string;
 }
 
+/**
+ * Minimal Chart.yaml representation for version updates.
+ */
 export interface ChartYaml {
   name: string;
   version?: string;
   [key: string]: string | number | boolean | object | undefined;
 }
 
+/**
+ * Run a host-side shell command, capturing output and logging
+ * via semantic-release's logger.
+ *
+ * @param cmd   Full shell command to execute.
+ * @param cwd   Working directory to run the command from.
+ * @param logger Semantic-release logger for structured logging.
+ * @returns Captured stdout as string (trimmed).
+ * @throws Error if the command exits non-zero.
+ */
 function runHostCmd(
   cmd: string,
   cwd: string,
@@ -57,36 +85,55 @@ function runHostCmd(
   }
 }
 
+/**
+ * Run a Dockerized command, mounting the given `cwd` into `/apps`
+ * and using it as the working directory.
+ *
+ * @param image Docker image to run (e.g. Helm or helm-docs).
+ * @param args  Arguments to pass to the container entrypoint.
+ * @param cwd   Host working directory, mounted into `/apps`.
+ * @param logger Logger for structured command output.
+ */
 function runDockerCmd(
   image: string,
   args: string[],
   cwd: string,
   logger: Context['logger'],
 ): void {
-  const full: string = [
-    'docker run --rm',
+  const full = [
+    'docker run',
+    '--rm',
     '--add-host=host.docker.internal:host-gateway',
-    `-v ${cwd}:/apps`,
-    '-w /apps',
+    `--volume=${cwd}:/apps`,
+    '--workdir=/apps',
     image,
     ...args,
   ].join(' ');
   void runHostCmd(full, cwd, logger);
 }
 
+/**
+ * Run a shell script inside a Docker container with `/bin/sh -lc`.
+ * Useful for chaining multiple commands in one container run.
+ *
+ * @param image Docker image to run.
+ * @param script Shell script to execute inside the container.
+ * @param cwd Host working directory, mounted into `/apps`.
+ * @param logger Logger for structured command output.
+ */
 function runDockerShell(
   image: string,
   script: string,
   cwd: string,
   logger: Context['logger'],
 ): void {
-  const full: string = [
-    'docker run --rm',
+  const full = [
+    'docker run',
+    '--rm',
     '--add-host=host.docker.internal:host-gateway',
-    `-v ${cwd}:/apps`,
-    '-w /apps',
-    '--entrypoint',
-    '/bin/sh',
+    `--volume=${cwd}:/apps`,
+    '--workdir=/apps',
+    '--entrypoint=/bin/sh',
     image,
     '-lc',
     JSON.stringify(script),
@@ -94,8 +141,15 @@ function runDockerShell(
   void runHostCmd(full, cwd, logger);
 }
 
+/**
+ * Verify that a Docker image can be pulled.
+ * Throws a semantic-release error if the pull fails.
+ *
+ * @param image Image name (e.g. `alpine/helm:3.15.2`).
+ * @param logger Logger for logging progress and errors.
+ */
 function verifyDockerImage(image: string, logger: Context['logger']): void {
-  const cmd: string = `docker pull ${image}`;
+  const cmd = `docker pull ${image}`;
   logger.log(`$ ${cmd}`);
   try {
     const out: string = execSync(cmd, { stdio: 'pipe', encoding: 'utf8' });
@@ -117,12 +171,28 @@ function verifyDockerImage(image: string, logger: Context['logger']): void {
   }
 }
 
+/**
+ * Update the `version` field of a Chart.yaml, preserving all
+ * other keys and formatting.
+ *
+ * @param rawYaml  Raw Chart.yaml contents.
+ * @param version  New version string to set.
+ * @returns Updated YAML string.
+ */
 function setChartVersion(rawYaml: string, version: string): string {
   const parsed: ChartYaml = yaml.parse(rawYaml) as ChartYaml;
   const updated: ChartYaml = { ...parsed, version };
   return yaml.stringify(updated);
 }
 
+/**
+ * Verify that Docker is available, required images are present,
+ * and Chart.yaml exists at the configured path.
+ *
+ * @param pluginConfig Helm plugin configuration.
+ * @param context Semantic-release context (logger, cwd, etc).
+ * @throws SemanticReleaseError if requirements are missing.
+ */
 export async function verifyConditions(
   pluginConfig: HelmPluginConfig,
   context: Context,
@@ -137,9 +207,8 @@ export async function verifyConditions(
   }
 
   if (dockerOk) {
-    const helmImage: string = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
-    const docsImage: string =
-      pluginConfig.docsImage ?? 'jnorwood/helm-docs:v1.14.2';
+    const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
+    const docsImage = pluginConfig.docsImage ?? 'jnorwood/helm-docs:v1.14.2';
     verifyDockerImage(helmImage, logger);
     verifyDockerImage(docsImage, logger);
   } else {
@@ -150,7 +219,7 @@ export async function verifyConditions(
     );
   }
 
-  const chartYamlPath: string = `${cwd}/${pluginConfig.chartPath}/Chart.yaml`;
+  const chartYamlPath = `${cwd}/${pluginConfig.chartPath}/Chart.yaml`;
   if (fs.existsSync(chartYamlPath)) {
     logger.log(`Found chart: ${chartYamlPath}`);
   } else {
@@ -162,12 +231,20 @@ export async function verifyConditions(
   }
 }
 
+/**
+ * Prepare step: bump chart version, lint and template the chart,
+ * run helm-docs, and package into `dist/charts`.
+ *
+ * @param pluginConfig Helm plugin configuration.
+ * @param context Semantic-release context (logger, cwd, nextRelease).
+ * @throws SemanticReleaseError if version or Chart.yaml is missing.
+ */
 export async function prepare(
   pluginConfig: HelmPluginConfig,
   context: Context,
 ): Promise<void> {
   const { cwd, nextRelease, logger } = context;
-  const version: string | undefined = nextRelease?.version;
+  const version = nextRelease?.version;
 
   if (version === undefined) {
     throw new SemanticReleaseError(
@@ -177,7 +254,7 @@ export async function prepare(
     );
   }
 
-  const chartYamlPath: string = `${cwd}/${pluginConfig.chartPath}/Chart.yaml`;
+  const chartYamlPath = `${cwd}/${pluginConfig.chartPath}/Chart.yaml`;
   if (!fs.existsSync(chartYamlPath)) {
     throw new SemanticReleaseError(
       'Chart.yaml missing during prepare.',
@@ -186,12 +263,12 @@ export async function prepare(
     );
   }
 
-  const raw: string = fs.readFileSync(chartYamlPath, 'utf8');
-  const updatedYaml: string = setChartVersion(raw, version);
+  const raw = fs.readFileSync(chartYamlPath, 'utf8');
+  const updatedYaml = setChartVersion(raw, version);
   fs.writeFileSync(chartYamlPath, updatedYaml, 'utf8');
   logger.log(`Updated Chart.yaml to version ${version}`);
 
-  const helmImage: string = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
+  const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
   void runDockerCmd(helmImage, ['lint', pluginConfig.chartPath], cwd, logger);
   void runDockerCmd(
     helmImage,
@@ -200,12 +277,8 @@ export async function prepare(
     logger,
   );
 
-  const docsImage: string =
-    pluginConfig.docsImage ?? 'jnorwood/helm-docs:v1.14.2';
-  const docsArgs: string[] = pluginConfig.docsArgs ?? [
-    '--template-files',
-    'README.md',
-  ];
+  const docsImage = pluginConfig.docsImage ?? 'jnorwood/helm-docs:v1.14.2';
+  const docsArgs = pluginConfig.docsArgs ?? ['--template-files=README.md'];
   try {
     void runDockerCmd(
       docsImage,
@@ -218,40 +291,55 @@ export async function prepare(
     logger.log('helm-docs failed or missing; skipping docs generation.');
   }
 
-  const outDir: string = `${cwd}/dist/charts`;
+  const outDir = `${cwd}/dist/charts`;
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
   void runDockerCmd(
     helmImage,
-    ['package', pluginConfig.chartPath, '-d', 'dist/charts'],
+    ['package', pluginConfig.chartPath, '--destination=dist/charts'],
     cwd,
     logger,
   );
   logger.log('Packaged Helm chart into dist/charts.');
 }
 
+/**
+ * Extract the `host[:port]` part from an OCI repository URL.
+ *
+ * @param ociRepo Full OCI repo (e.g. `oci://host:5000/charts/app`).
+ * @returns Host and optional port only.
+ */
 function extractHostPortFromOci(ociRepo: string): string {
-  const trimmed: string = ociRepo.replace(/^oci:\/\//, '');
-  const firstSlash: number = trimmed.indexOf('/');
+  const trimmed = ociRepo.replace(/^oci:\/\//, '');
+  const firstSlash = trimmed.indexOf('/');
   return firstSlash === -1 ? trimmed : trimmed.slice(0, firstSlash);
 }
 
+/**
+ * Publish packaged Helm charts to an OCI registry.
+ * Handles insecure registries, credentials, and `helm push`.
+ *
+ * @param pluginConfig Helm plugin configuration.
+ * @param context Semantic-release context (logger, cwd).
+ * @throws SemanticReleaseError if no packaged charts exist.
+ */
 export async function publish(
   pluginConfig: HelmPluginConfig,
   context: Context,
 ): Promise<void> {
   const { cwd, logger } = context;
-  const helmImage: string = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
+  const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
 
   if (pluginConfig.ociRepo === undefined) {
     logger.log('No OCI repository configured; skipping helm push.');
     return;
   }
 
-  const pkgDir: string = `${cwd}/dist/charts`;
+  const pkgDir = `${cwd}/dist/charts`;
   const entries = fs.existsSync(pkgDir)
     ? fs.readdirSync(pkgDir, { withFileTypes: true })
     : [];
-  const files: string[] = entries
+  const files = entries
     .filter((d) => d.isFile() && d.name.endsWith('.tgz'))
     .map((d) => `dist/charts/${d.name}`);
 
@@ -263,43 +351,31 @@ export async function publish(
     );
   }
 
-  const hostPort: string = extractHostPortFromOci(pluginConfig.ociRepo);
+  const hostPort = extractHostPortFromOci(pluginConfig.ociRepo);
   const plainHttpFlag = pluginConfig.ociInsecure ? ' --plain-http' : '';
   const insecureLoginFlag = pluginConfig.ociInsecure ? ' --insecure' : '';
 
-  // Build a single script to run inside the Helm image
   const steps: string[] = [];
 
   if (pluginConfig.ociInsecure) {
-    // Mark the host as insecure in Helm's registry config (helps some envs)
-    const cfgJson: string = `{"auths":{"${hostPort}":{"insecure":true}}}`;
+    const cfgJson = `{"auths":{"${hostPort}":{"insecure":true}}}`;
     steps.push(
       'mkdir -p /root/.config/helm/registry',
       `printf %s '${cfgJson}' > /root/.config/helm/registry/config.json`,
     );
   }
 
-  // Always do a non-interactive login if creds provided, or if insecure, use anon
-  if (
-    (pluginConfig.ociUsername ?? '').length > 0 ||
-    (pluginConfig.ociPassword ?? '').length > 0 ||
-    pluginConfig.ociInsecure
-  ) {
-    const user =
-      (pluginConfig.ociUsername ?? '').length > 0
-        ? pluginConfig.ociUsername
-        : 'anonymous';
-    const pass =
-      (pluginConfig.ociPassword ?? '').length > 0
-        ? pluginConfig.ociPassword
-        : 'anonymous';
+  const haveUser = (pluginConfig.ociUsername ?? '').length > 0;
+  const havePass = (pluginConfig.ociPassword ?? '').length > 0;
+  if (haveUser || havePass || pluginConfig.ociInsecure) {
+    const user = haveUser ? pluginConfig.ociUsername : 'anonymous';
+    const pass = havePass ? pluginConfig.ociPassword : 'anonymous';
     steps.push(
-      `helm registry login${insecureLoginFlag} -u ${user} -p ${pass} ${hostPort}`,
+      `helm registry login${insecureLoginFlag} --username=${user} --password=${pass} ${hostPort}`,
     );
   }
 
   for (const tgz of files) {
-    // >>> KEY FIX: add --plain-http when pushing to an HTTP registry
     steps.push(`helm push ${tgz} ${pluginConfig.ociRepo}${plainHttpFlag}`);
   }
 
@@ -309,4 +385,7 @@ export async function publish(
   logger.log(`Pushed ${files.length} chart(s) to ${pluginConfig.ociRepo}`);
 }
 
+/**
+ * Default export for semantic-release plugin entrypoint.
+ */
 export default { verifyConditions, prepare, publish };
