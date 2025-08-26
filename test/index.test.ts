@@ -1,3 +1,4 @@
+// file: test/index.test.ts
 import {
   describe,
   it,
@@ -42,7 +43,7 @@ function pull(image: string): void {
 
 describe('semantic-release-helm (integration, real Docker)', () => {
   let registry: StartedTestContainer | null = null;
-  let registryPort: number = 0;
+  let registryPort = 0;
 
   const logger = {
     log: (...args: unknown[]) => {
@@ -100,11 +101,12 @@ describe('semantic-release-helm (integration, real Docker)', () => {
     fs.rmSync(workdir, { recursive: true, force: true });
   });
 
-  it('verifyConditions succeeds with real chart and images', async () => {
+  it('verifyConditions succeeds (GH Pages default)', async () => {
     const cfg: HelmPluginConfig = {
       chartPath: chartPathInWorkdir,
       helmImage: HELM_IMAGE,
       docsImage: DOCS_IMAGE,
+      // leave ghPages undefined to use default GH Pages mode
       ociInsecure: true,
     };
     const ctx = { logger, cwd: workdir } as unknown as VerifyConditionsContext;
@@ -112,13 +114,15 @@ describe('semantic-release-helm (integration, real Docker)', () => {
     await expect(verifyConditions(cfg, ctx)).resolves.toBeUndefined();
   }, 120_000);
 
-  it('prepare bumps version, lints, templates, docs, and packages', async () => {
+  it('prepare creates packaged chart and index.yaml for GH Pages', async () => {
     const cfg: HelmPluginConfig = {
       chartPath: chartPathInWorkdir,
       helmImage: HELM_IMAGE,
       docsImage: DOCS_IMAGE,
-      // no --sort-values (not in v1.14.2)
-      ociInsecure: true,
+      ghPages: {
+        enabled: true,
+        url: 'https://example.test/charts',
+      },
     };
     const ctx = {
       logger,
@@ -137,17 +141,15 @@ describe('semantic-release-helm (integration, real Docker)', () => {
     const dist = path.join(workdir, 'dist', 'charts');
     const files = fs.existsSync(dist) ? fs.readdirSync(dist) : [];
     expect(files.some((f) => f.endsWith('.tgz'))).toBe(true);
-
-    const readme = path.join(workdir, 'charts', 'app', 'README.md');
-    expect(fs.existsSync(readme)).toBe(true);
+    expect(files.includes('index.yaml')).toBe(true);
   }, 180_000);
 
-  it('publish pushes to a real OCI registry (registry:2)', async () => {
+  it('publish pushes to local OCI (insecure, no credentials)', async () => {
     const prepCfg: HelmPluginConfig = {
       chartPath: chartPathInWorkdir,
       helmImage: HELM_IMAGE,
       docsImage: DOCS_IMAGE,
-      ociInsecure: true,
+      ghPages: { enabled: true, url: 'https://example.test/charts' },
     };
     const prepCtx = {
       logger,
@@ -164,7 +166,7 @@ describe('semantic-release-helm (integration, real Docker)', () => {
       helmImage: HELM_IMAGE,
       docsImage: DOCS_IMAGE,
       ociRepo,
-      ociInsecure: true,
+      ociInsecure: true, // HTTP registry
     };
     const pubCtx = { logger, cwd: workdir } as unknown as PublishContext;
 
@@ -174,4 +176,58 @@ describe('semantic-release-helm (integration, real Docker)', () => {
     const files = fs.readdirSync(dist);
     expect(files.some((f) => f.endsWith('.tgz'))).toBe(true);
   }, 240_000);
+
+  it('publish pushes to local OCI (insecure, with credentials)', async () => {
+    const prepCfg: HelmPluginConfig = {
+      chartPath: chartPathInWorkdir,
+      helmImage: HELM_IMAGE,
+      docsImage: DOCS_IMAGE,
+      ghPages: { enabled: true },
+    };
+    const prepCtx = {
+      logger,
+      cwd: workdir,
+      nextRelease: { version: '0.4.0' },
+    } as unknown as PrepareContext;
+
+    await prepare(prepCfg, prepCtx);
+
+    const ociRepo = `oci://host.docker.internal:${registryPort}/charts`;
+
+    const pubCfg: HelmPluginConfig = {
+      chartPath: chartPathInWorkdir,
+      helmImage: HELM_IMAGE,
+      docsImage: DOCS_IMAGE,
+      ociRepo,
+      ociInsecure: true,
+      ociUsername: 'anonymous',
+      ociPassword: 'anonymous',
+    };
+    const pubCtx = { logger, cwd: workdir } as unknown as PublishContext;
+
+    await expect(publish(pubCfg, pubCtx)).resolves.toBeUndefined();
+
+    const dist = path.join(workdir, 'dist', 'charts');
+    const files = fs.readdirSync(dist);
+    expect(files.some((f) => f.endsWith('.tgz'))).toBe(true);
+  }, 240_000);
+
+  it('publish fails when no packaged charts exist', async () => {
+    const cfg: HelmPluginConfig = {
+      chartPath: chartPathInWorkdir,
+      helmImage: HELM_IMAGE,
+      docsImage: DOCS_IMAGE,
+      ociRepo: `oci://host.docker.internal:${registryPort}/charts`,
+      ociInsecure: true,
+    };
+    const ctx = { logger, cwd: workdir } as unknown as PublishContext;
+
+    // Ensure no dist/charts exists
+    fs.rmSync(path.join(workdir, 'dist'), { recursive: true, force: true });
+
+    await expect(publish(cfg, ctx)).rejects.toHaveProperty(
+      'code',
+      'ENOPACKAGEDCHART',
+    );
+  }, 120_000);
 });

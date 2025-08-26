@@ -87,7 +87,11 @@ module.exports = {
     [
       '@semantic-release/git',
       {
-        assets: ['charts/app/Chart.yaml', 'charts/app/README.md', 'CHANGELOG.md'],
+        assets: [
+          'charts/app/Chart.yaml',
+          'charts/app/README.md',
+          'CHANGELOG.md',
+        ],
         message:
           'chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}',
       },
@@ -98,16 +102,16 @@ module.exports = {
 
 ### Configuration Options
 
-| Option        | Type      | Required | Description |
-|---------------|-----------|----------|-------------|
-| `chartPath`   | `string`  | Yes      | Path to the chart directory containing `Chart.yaml`. |
-| `ociRepo`     | `string`  | No       | The target OCI repository (e.g., `oci://ghcr.io/my-org/charts`). |
-| `ociInsecure` | `boolean` | No       | If `true`, allows pushing to HTTP registries. Default: `false`. |
-| `ociUsername` | `string`  | No       | Username for authenticating with the OCI registry. |
-| `ociPassword` | `string`  | No       | Password or token for authenticating with the OCI registry. |
-| `helmImage`   | `string`  | No       | Custom Docker image for running Helm. Default: `alpine/helm:3.15.2`. |
-| `docsImage`   | `string`  | No       | Custom Docker image for running helm-docs. Default: `jnorwood/helm-docs:v1.14.2`. |
-| `docsArgs`    | `string[]`| No       | Additional arguments for helm-docs. Default: `['--template-files', 'README.md']`. |
+| Option        | Type       | Required | Description                                                                       |
+| ------------- | ---------- | -------- | --------------------------------------------------------------------------------- |
+| `chartPath`   | `string`   | Yes      | Path to the chart directory containing `Chart.yaml`.                              |
+| `ociRepo`     | `string`   | No       | The target OCI repository (e.g., `oci://ghcr.io/my-org/charts`).                  |
+| `ociInsecure` | `boolean`  | No       | If `true`, allows pushing to HTTP registries. Default: `false`.                   |
+| `ociUsername` | `string`   | No       | Username for authenticating with the OCI registry.                                |
+| `ociPassword` | `string`   | No       | Password or token for authenticating with the OCI registry.                       |
+| `helmImage`   | `string`   | No       | Custom Docker image for running Helm. Default: `alpine/helm:3.15.2`.              |
+| `docsImage`   | `string`   | No       | Custom Docker image for running helm-docs. Default: `jnorwood/helm-docs:v1.14.2`. |
+| `docsArgs`    | `string[]` | No       | Additional arguments for helm-docs. Default: `['--template-files', 'README.md']`. |
 
 ## Known Issues
 
