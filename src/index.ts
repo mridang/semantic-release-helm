@@ -385,6 +385,7 @@ export async function publish(
   logger.log(`Pushed ${files.length} chart(s) to ${pluginConfig.ociRepo}`);
 }
 
+// noinspection JSUnusedGlobalSymbols
 /**
  * Default export for semantic-release plugin entrypoint.
  */
