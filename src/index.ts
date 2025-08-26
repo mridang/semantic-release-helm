@@ -222,7 +222,6 @@ export async function verifyConditions(
     }
   } else {
     const { haveUser, havePass } = resolveCreds(pluginConfig);
-    const hostPort = extractHostPortFromOci(ociRepo);
     logger.log(
       `[helm] verifyConditions: OCI mode -> repo="${ociRepo}", insecure=${pluginConfig.ociInsecure === true}, usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
