@@ -177,7 +177,7 @@ export async function verifyConditions(
   context: Context,
 ): Promise<void> {
   const { logger, cwd } = context;
-  logger.log('[helm] verifyConditions: starting');
+  logger.log('verifyConditions: starting');
 
   try {
     void runHostCmd('docker version', cwd, logger);
@@ -192,7 +192,7 @@ export async function verifyConditions(
   const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
   const docsImage = pluginConfig.docsImage ?? 'jnorwood/helm-docs:v1.14.2';
   logger.log(
-    `[helm] verifyConditions: helmImage="${helmImage}", docsImage="${docsImage}"`,
+    `verifyConditions: helmImage="${helmImage}", docsImage="${docsImage}"`,
   );
 
   verifyDockerImage(helmImage, logger);
@@ -206,24 +206,24 @@ export async function verifyConditions(
       `No Chart.yaml found in ${pluginConfig.chartPath}.`,
     );
   }
-  logger.log(`[helm] verifyConditions: found chart at ${chartYamlPath}`);
+  logger.log(`verifyConditions: found chart at ${chartYamlPath}`);
 
   const ociRepo = pluginConfig.ociRepo;
   if (!ociRepo) {
     const url = pluginConfig.ghPages?.url;
     if (url) {
       logger.log(
-        `[helm] verifyConditions: GH Pages mode (default). Resolved URL: ${url}`,
+        `verifyConditions: GH Pages mode (default). Resolved URL: ${url}`,
       );
     } else {
       logger.log(
-        '[helm] verifyConditions: GH Pages mode (default). Resolved URL: (none; index will be written without --url)',
+        'verifyConditions: GH Pages mode (default). Resolved URL: (none; index will be written without --url)',
       );
     }
   } else {
     const { haveUser, havePass } = resolveCreds(pluginConfig);
     logger.log(
-      `[helm] verifyConditions: OCI mode -> repo="${ociRepo}", insecure=${pluginConfig.ociInsecure === true}, usernamePresent=${haveUser}, passwordPresent=${havePass}`,
+      `verifyConditions: OCI mode -> repo="${ociRepo}", insecure=${pluginConfig.ociInsecure === true}, usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
     if ((haveUser && !havePass) || (!haveUser && havePass)) {
       throw new SemanticReleaseError(
@@ -234,7 +234,7 @@ export async function verifyConditions(
     }
   }
 
-  logger.log('[helm] verifyConditions: ok');
+  logger.log('verifyConditions: ok');
 }
 
 /**
@@ -245,7 +245,7 @@ export async function prepare(
   context: Context,
 ): Promise<void> {
   const { cwd, nextRelease, logger } = context;
-  logger.log('[helm] prepare: starting');
+  logger.log('prepare: starting');
 
   const version = nextRelease?.version;
   if (!version) {
@@ -268,7 +268,7 @@ export async function prepare(
   const raw = fs.readFileSync(chartYamlPath, 'utf8');
   const updatedYaml = setChartVersion(raw, version);
   fs.writeFileSync(chartYamlPath, updatedYaml, 'utf8');
-  logger.log(`[helm] prepare: updated Chart.yaml to version ${version}`);
+  logger.log(`prepare: updated Chart.yaml to version ${version}`);
 
   const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
   void runDockerCmd(helmImage, ['lint', pluginConfig.chartPath], cwd, logger);
@@ -288,10 +288,10 @@ export async function prepare(
       `${cwd}/${pluginConfig.chartPath}`,
       logger,
     );
-    logger.log('[helm] prepare: helm-docs succeeded');
+    logger.log('prepare: helm-docs succeeded');
   } catch {
     logger.log(
-      '[helm] prepare: helm-docs failed or missing; skipping docs generation',
+      'prepare: helm-docs failed or missing; skipping docs generation',
     );
   }
 
@@ -304,7 +304,7 @@ export async function prepare(
     cwd,
     logger,
   );
-  logger.log('[helm] prepare: packaged chart(s) into dist/charts');
+  logger.log('prepare: packaged chart(s) into dist/charts');
 
   // GH Pages index (default)
   if (!pluginConfig.ociRepo) {
@@ -313,10 +313,10 @@ export async function prepare(
       ? ['repo', 'index', 'dist/charts', `--url=${url}`]
       : ['repo', 'index', 'dist/charts'];
     void runDockerCmd(helmImage, indexArgs, cwd, logger);
-    logger.log('[helm] prepare: generated dist/charts/index.yaml');
+    logger.log('prepare: generated dist/charts/index.yaml');
   }
 
-  logger.log('[helm] prepare: ok');
+  logger.log('prepare: ok');
 }
 
 /**
@@ -328,7 +328,7 @@ export async function publish(
   context: Context,
 ): Promise<void> {
   const { cwd, logger } = context;
-  logger.log('[helm] publish: starting');
+  logger.log('publish: starting');
 
   const pkgDir = `${cwd}/dist/charts`;
   const entries = fs.existsSync(pkgDir)
@@ -345,11 +345,11 @@ export async function publish(
       'Prepare step must package chart before publish.',
     );
   }
-  logger.log(`[helm] publish: found ${files.length} packaged chart(s)`);
+  logger.log(`publish: found ${files.length} packaged chart(s)`);
 
   if (!pluginConfig.ociRepo) {
     logger.log(
-      '[helm] publish: GH Pages mode; nothing to push (artifact upload left to CI)',
+      'publish: GH Pages mode; nothing to push (artifact upload left to CI)',
     );
     return;
   }
@@ -362,7 +362,7 @@ export async function publish(
   const { username, password, haveUser, havePass } = resolveCreds(pluginConfig);
 
   logger.log(
-    `[helm] publish: OCI mode -> repo="${pluginConfig.ociRepo}", insecure=${pluginConfig.ociInsecure === true}, usernamePresent=${haveUser}, passwordPresent=${havePass}`,
+    `publish: OCI mode -> repo="${pluginConfig.ociRepo}", insecure=${pluginConfig.ociInsecure === true}, usernamePresent=${haveUser}, passwordPresent=${havePass}`,
   );
 
   const steps: string[] = [];
@@ -393,4 +393,6 @@ export async function publish(
     `{ "helm": { "pushed": ${files.length}, "repo": "${pluginConfig.ociRepo}" } }`,
   );
 }
+
+// noinspection JSUnusedGlobalSymbols
 export default { verifyConditions, prepare, publish };
