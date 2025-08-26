@@ -105,7 +105,7 @@ describe('semantic-release-helm (integration, real Docker)', () => {
       chartPath: chartPathInWorkdir,
       helmImage: HELM_IMAGE,
       docsImage: DOCS_IMAGE,
-      docsArgs: ['--sort-values'],
+      ociInsecure: true,
     };
     const ctx = { logger, cwd: workdir } as unknown as VerifyConditionsContext;
 
@@ -117,7 +117,8 @@ describe('semantic-release-helm (integration, real Docker)', () => {
       chartPath: chartPathInWorkdir,
       helmImage: HELM_IMAGE,
       docsImage: DOCS_IMAGE,
-      docsArgs: ['--sort-values'],
+      // no --sort-values (not in v1.14.2)
+      ociInsecure: true,
     };
     const ctx = {
       logger,
@@ -146,6 +147,7 @@ describe('semantic-release-helm (integration, real Docker)', () => {
       chartPath: chartPathInWorkdir,
       helmImage: HELM_IMAGE,
       docsImage: DOCS_IMAGE,
+      ociInsecure: true,
     };
     const prepCtx = {
       logger,
@@ -155,10 +157,6 @@ describe('semantic-release-helm (integration, real Docker)', () => {
 
     await prepare(prepCfg, prepCtx);
 
-    // IMPORTANT:
-    // use host.docker.internal so the Helm container can reach the host-
-    // bound Testcontainers registry. ensure your plugin adds
-    // --add-host=host.docker.internal:host-gateway to docker run.
     const ociRepo = `oci://host.docker.internal:${registryPort}/charts`;
 
     const pubCfg: HelmPluginConfig = {
@@ -166,6 +164,7 @@ describe('semantic-release-helm (integration, real Docker)', () => {
       helmImage: HELM_IMAGE,
       docsImage: DOCS_IMAGE,
       ociRepo,
+      ociInsecure: true,
     };
     const pubCtx = { logger, cwd: workdir } as unknown as PublishContext;
 

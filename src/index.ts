@@ -1,3 +1,4 @@
+// file: src/index.ts
 import * as fs from 'fs';
 // @ts-expect-error since this is not typed
 import { Context, PluginConfig } from 'semantic-release';
@@ -7,23 +8,23 @@ import { execSync } from 'node:child_process';
 import * as yaml from 'yaml';
 
 /**
- * Configuration for the Helm OCI release plugin. The plugin updates the
- * chart version, validates rendering, generates docs via helm-docs,
- * packages the chart, and pushes the package to an OCI registry. Pair it
- * with @semantic-release/github to upload the .tgz (and optional .prov)
- * as GitHub Release assets.
+ * Configuration for the Helm OCI release plugin. Updates Chart.yaml
+ * version, lints and templates the chart, runs helm-docs, packages the
+ * chart, and optionally pushes the package to an OCI registry.
  */
 export interface HelmPluginConfig extends PluginConfig {
   chartPath: string;
   ociRepo?: string;
+  ociInsecure?: boolean;
+  ociUsername?: string;
+  ociPassword?: string;
   docsArgs?: string[];
   helmImage?: string;
   docsImage?: string;
 }
 
 /**
- * Minimal structure for Chart.yaml. Only common fields are typed to
- * preserve unknown keys across parse/serialize.
+ * Minimal shape for Chart.yaml retaining unknown keys during update.
  */
 export interface ChartYaml {
   name: string;
@@ -32,14 +33,8 @@ export interface ChartYaml {
 }
 
 /**
- * Execute a host shell command and return trimmed stdout. On failure,
- * logs stdout/stderr and throws the original error so callers see the
- * exact underlying problem (e.g., helm lint diagnostics).
- *
- * @param cmd The command line to run, exactly as it would be typed.
- * @param cwd The working directory for command execution.
- * @param logger The semantic-release logger for structured logging.
- * @returns The command's trimmed stdout (may be an empty string).
+ * Execute a host command, logging stdout/stderr to semantic-release
+ * logger. Throws on non-zero exit.
  */
 function runHostCmd(
   cmd: string,
@@ -58,35 +53,25 @@ function runHostCmd(
   } catch (err: unknown) {
     logger.error(`Command failed: ${cmd}`);
     if (typeof err === 'object' && err !== null) {
-      const maybe: {
-        stdout?: string | Buffer;
-        stderr?: string | Buffer;
-        message?: string;
-      } = err as {
+      const e = err as {
         stdout?: string | Buffer;
         stderr?: string | Buffer;
         message?: string;
       };
-      const out: string =
-        typeof maybe.stdout === 'string'
-          ? maybe.stdout
-          : Buffer.isBuffer(maybe.stdout)
-            ? maybe.stdout.toString('utf8')
-            : '';
-      const errOut: string =
-        typeof maybe.stderr === 'string'
-          ? maybe.stderr
-          : Buffer.isBuffer(maybe.stderr)
-            ? maybe.stderr.toString('utf8')
-            : '';
+      const out = Buffer.isBuffer(e.stdout)
+        ? e.stdout.toString('utf8')
+        : String(e.stdout ?? '');
+      const errOut = Buffer.isBuffer(e.stderr)
+        ? e.stderr.toString('utf8')
+        : String(e.stderr ?? '');
       if (out.trim().length > 0) {
         logger.error(out.trim());
       }
       if (errOut.trim().length > 0) {
         logger.error(errOut.trim());
       }
-      if (maybe.message !== undefined && maybe.message.length > 0) {
-        logger.error(maybe.message);
+      if (e.message && e.message.length > 0) {
+        logger.error(e.message);
       }
     }
     throw err;
@@ -94,15 +79,9 @@ function runHostCmd(
 }
 
 /**
- * Run a Dockerized CLI with the given image and arguments. The repo root
- * is mounted at /apps and used as the container working directory. Adds
- * a host-gateway mapping so containers can reach host services via the
- * host.docker.internal name on Linux/macOS/Windows.
- *
- * @param image The Docker image name:tag to execute.
- * @param args The arguments passed to the container entrypoint.
- * @param cwd The host directory mounted into /apps inside the container.
- * @param logger The semantic-release logger for command and output logs.
+ * Run a Dockerized CLI (entrypoint image default) with args, mounting
+ * cwd to /apps and using it as working directory. Adds host-gateway
+ * mapping so containers can reach host services via host.docker.internal.
  */
 function runDockerCmd(
   image: string,
@@ -122,12 +101,31 @@ function runDockerCmd(
 }
 
 /**
- * Pull a Docker image to fail fast if it cannot be fetched in CI. This
- * reduces surprises during later steps when the image would otherwise be
- * used for the first time.
- *
- * @param image The Docker image reference to pull (name:tag or digest).
- * @param logger The semantic-release logger for command and output logs.
+ * Run a shell script inside the container (entrypoint overridden to
+ * /bin/sh). Useful to chain multiple helm commands in a single run.
+ */
+function runDockerShell(
+  image: string,
+  script: string,
+  cwd: string,
+  logger: Context['logger'],
+): void {
+  const full: string = [
+    'docker run --rm',
+    '--add-host=host.docker.internal:host-gateway',
+    `-v ${cwd}:/apps`,
+    '-w /apps',
+    '--entrypoint',
+    '/bin/sh',
+    image,
+    '-lc',
+    JSON.stringify(script),
+  ].join(' ');
+  void runHostCmd(full, cwd, logger);
+}
+
+/**
+ * Pull an image up-front to fail fast if unavailable.
  */
 function verifyDockerImage(image: string, logger: Context['logger']): void {
   const cmd: string = `docker pull ${image}`;
@@ -157,12 +155,7 @@ function verifyDockerImage(image: string, logger: Context['logger']): void {
 }
 
 /**
- * Update Chart.yaml with a new version while preserving all other fields.
- * Returns the updated YAML as a string; the caller persists it to disk.
- *
- * @param rawYaml The existing Chart.yaml contents as a string.
- * @param version The version to set in the Chart.yaml.
- * @returns A new YAML string with the updated version field.
+ * Return a new Chart.yaml string with version updated.
  */
 function setChartVersion(rawYaml: string, version: string): string {
   const parsed: ChartYaml = yaml.parse(rawYaml) as ChartYaml;
@@ -171,12 +164,8 @@ function setChartVersion(rawYaml: string, version: string): string {
 }
 
 /**
- * Verify that Docker is available, required images can be pulled, and the
- * chart exists. This prepares the environment for later steps.
- *
- * @param pluginConfig The plugin configuration provided by the user.
- * @param context The semantic-release context containing env and logger.
- * @throws {SemanticReleaseError} On missing Docker, images, or chart.
+ * Verify Docker availability, pull required images, and ensure Chart.yaml
+ * exists at the configured chartPath.
  */
 export async function verifyConditions(
   pluginConfig: HelmPluginConfig,
@@ -218,13 +207,8 @@ export async function verifyConditions(
 }
 
 /**
- * Prepare the release by updating the chart version, validating the chart
- * with lint and template, generating documentation with helm-docs, and
- * packaging the chart into dist/charts.
- *
- * @param pluginConfig The plugin configuration provided by the user.
- * @param context The semantic-release context containing env and logger.
- * @throws {SemanticReleaseError} If the version is missing or chart absent.
+ * Update chart version, lint and template the chart, run helm-docs using
+ * README.md as template by default, and package the chart to dist/charts.
  */
 export async function prepare(
   pluginConfig: HelmPluginConfig,
@@ -233,19 +217,25 @@ export async function prepare(
   const { cwd, nextRelease, logger } = context;
   const version: string | undefined = nextRelease?.version;
 
-  if (version !== undefined) {
+  if (version === undefined) {
+    throw new SemanticReleaseError(
+      'Missing next release version.',
+      'ENOVERSION',
+      'semantic-release did not provide a nextRelease.version.',
+    );
+  } else {
     const chartYamlPath: string = `${cwd}/${pluginConfig.chartPath}/Chart.yaml`;
-    if (fs.existsSync(chartYamlPath)) {
-      const raw: string = fs.readFileSync(chartYamlPath, 'utf8');
-      const updatedYaml: string = setChartVersion(raw, version);
-      fs.writeFileSync(chartYamlPath, updatedYaml, 'utf8');
-      logger.log(`Updated Chart.yaml to version ${version}`);
-    } else {
+    if (!fs.existsSync(chartYamlPath)) {
       throw new SemanticReleaseError(
         'Chart.yaml missing during prepare.',
         'EMISSINGCHARTYAML',
         `Expected Chart.yaml in ${pluginConfig.chartPath}.`,
       );
+    } else {
+      const raw: string = fs.readFileSync(chartYamlPath, 'utf8');
+      const updatedYaml: string = setChartVersion(raw, version);
+      fs.writeFileSync(chartYamlPath, updatedYaml, 'utf8');
+      logger.log(`Updated Chart.yaml to version ${version}`);
     }
 
     const helmImage: string = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
@@ -259,13 +249,10 @@ export async function prepare(
 
     const docsImage: string =
       pluginConfig.docsImage ?? 'jnorwood/helm-docs:v1.14.2';
-
-    // Default to using README.md as the template to avoid requiring .gotmpl
     const docsArgs: string[] = pluginConfig.docsArgs ?? [
       '--template-files',
       'README.md',
     ];
-
     try {
       void runDockerCmd(
         docsImage,
@@ -279,9 +266,7 @@ export async function prepare(
     }
 
     const outDir: string = `${cwd}/dist/charts`;
-    if (fs.existsSync(outDir)) {
-      // reuse directory
-    } else {
+    if (!fs.existsSync(outDir)) {
       fs.mkdirSync(outDir, { recursive: true });
     }
     void runDockerCmd(
@@ -291,24 +276,28 @@ export async function prepare(
       logger,
     );
     logger.log('Packaged Helm chart into dist/charts.');
-  } else {
-    throw new SemanticReleaseError(
-      'Missing next release version.',
-      'ENOVERSION',
-      'semantic-release did not provide a nextRelease.version.',
-    );
   }
 }
 
 /**
- * Publish the packaged chart to an OCI registry when configured. This
- * complements @semantic-release/github, which can upload the .tgz files
- * from dist/charts to the GitHub Release. If no OCI target is provided,
- * the step logs and exits.
- *
- * @param pluginConfig The plugin configuration provided by the user.
- * @param context The semantic-release context containing env and logger.
- * @throws {SemanticReleaseError} If packaging is missing when required.
+ * Extract "host[:port]" from an OCI repo string like
+ * "oci://host[:port]/path/to/repo".
+ */
+function extractHostPortFromOci(ociRepo: string): string {
+  const trimmed: string = ociRepo.replace(/^oci:\/\//, '');
+  const firstSlash: number = trimmed.indexOf('/');
+  if (firstSlash === -1) {
+    return trimmed;
+  } else {
+    return trimmed.slice(0, firstSlash);
+  }
+}
+
+/**
+ * Push packaged charts to OCI repository. For HTTP registries set
+ * ociInsecure=true. We always execute a non-interactive
+ * `helm registry login --insecure` when `ociInsecure` is true, using
+ * provided creds or fallback `anonymous/anonymous`, then `helm push`.
  */
 export async function publish(
   pluginConfig: HelmPluginConfig,
@@ -317,32 +306,77 @@ export async function publish(
   const { cwd, logger } = context;
   const helmImage: string = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
 
-  if (pluginConfig.ociRepo !== undefined) {
-    const files: string[] = fs
-      .readdirSync(`${cwd}/dist/charts`, { withFileTypes: true })
-      .filter((d): boolean => d.isFile() && d.name.endsWith('.tgz'))
-      .map((d): string => `dist/charts/${d.name}`);
-
-    if (files.length > 0) {
-      for (const tgz of files) {
-        void runDockerCmd(
-          helmImage,
-          ['push', tgz, pluginConfig.ociRepo],
-          cwd,
-          logger,
-        );
-      }
-      logger.log(`Pushed ${files.length} chart(s) to ${pluginConfig.ociRepo}`);
-    } else {
-      throw new SemanticReleaseError(
-        'No packaged chart found.',
-        'ENOPACKAGEDCHART',
-        'Prepare step must package chart before publish.',
-      );
-    }
-  } else {
+  if (pluginConfig.ociRepo === undefined) {
     logger.log('No OCI repository configured; skipping helm push.');
+    return;
   }
+
+  const pkgDir: string = `${cwd}/dist/charts`;
+  const entries = fs.existsSync(pkgDir)
+    ? fs.readdirSync(pkgDir, { withFileTypes: true })
+    : [];
+  const files: string[] = entries
+    .filter((d): boolean => d.isFile() && d.name.endsWith('.tgz'))
+    .map((d): string => `dist/charts/${d.name}`);
+
+  if (files.length === 0) {
+    throw new SemanticReleaseError(
+      'No packaged chart found.',
+      'ENOPACKAGEDCHART',
+      'Prepare step must package chart before publish.',
+    );
+  }
+
+  const hostPort: string = extractHostPortFromOci(pluginConfig.ociRepo);
+
+  // Build a single /bin/sh script to run inside the Helm container.
+  const steps: string[] = [];
+
+  if (pluginConfig.ociInsecure === true) {
+    // Ensure registry config exists and marks host as insecure (plain HTTP)
+    const cfgJson: string = `{"auths":{"${hostPort}":{"insecure":true}}}`;
+    steps.push(
+      'mkdir -p /root/.config/helm/registry',
+      `printf %s '${cfgJson}' > /root/.config/helm/registry/config.json`,
+    );
+
+    // Always perform a non-interactive login when ociInsecure=true to
+    // avoid prompts; if user didn’t supply creds, use harmless dummy creds.
+    const user =
+      (pluginConfig.ociUsername ?? '').length > 0
+        ? pluginConfig.ociUsername
+        : 'anonymous';
+    const pass =
+      (pluginConfig.ociPassword ?? '').length > 0
+        ? pluginConfig.ociPassword
+        : 'anonymous';
+    steps.push(
+      `helm registry login --insecure -u ${user} -p ${pass} ${hostPort}`,
+    );
+  } else {
+    // If secure and creds provided, login non-interactively; else skip.
+    if (
+      (pluginConfig.ociUsername ?? '').length > 0 ||
+      (pluginConfig.ociPassword ?? '').length > 0
+    ) {
+      const user = pluginConfig.ociUsername ?? '';
+      const pass = pluginConfig.ociPassword ?? '';
+      steps.push(`helm registry login -u ${user} -p ${pass} ${hostPort}`);
+    }
+  }
+
+  // Push all packaged charts
+  for (const tgz of files) {
+    steps.push(`helm push ${tgz} ${pluginConfig.ociRepo}`);
+  }
+
+  const script = steps.join(' && ');
+  runDockerShell(helmImage, script, cwd, logger);
+
+  logger.log(`Pushed ${files.length} chart(s) to ${pluginConfig.ociRepo}`);
 }
 
+/**
+ * Default export for semantic-release plugin loading.
+ */
 export default { verifyConditions, prepare, publish };
