@@ -169,7 +169,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
       docsImage: DOCS_IMAGE,
       ociRepo,
       ociInsecure: true,
-      ghPages: { enabled: false }, // important: disable gh-pages here
+      ghPages: { enabled: false },
     };
     const pubCtx = { logger, cwd: workdir } as unknown as PublishContext;
 
@@ -205,7 +205,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
       ociInsecure: true,
       ociUsername: 'anonymous',
       ociPassword: 'anonymous',
-      ghPages: { enabled: false }, // important: disable gh-pages here
+      ghPages: { enabled: false },
     };
     const pubCtx = { logger, cwd: workdir } as unknown as PublishContext;
 
@@ -523,7 +523,6 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     execSync(`git remote add origin "${remoteDir}"`, { cwd: workdir });
     execSync('git push -u origin main', { cwd: workdir });
 
-    // Prepare gh-pages branch with an existing index.yaml that contains another chart "other".
     const tmpWorktree = path.join(workdir, '.gh-pages-seed');
     execSync(`git worktree add --detach "${tmpWorktree}"`, { cwd: workdir });
     execSync(`git -C "${tmpWorktree}" switch --orphan gh-pages`);
@@ -554,7 +553,6 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     execSync(`git -C "${tmpWorktree}" push origin gh-pages`);
     execSync(`git worktree remove "${tmpWorktree}" --force`, { cwd: workdir });
 
-    // Now do a new release for app and publish; the "other" entries should remain.
     await prepare(
       {
         chartPath: chartPathInWorkdir,
@@ -600,4 +598,151 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
       ]),
     );
   }, 300_000);
+
+  describe.each([
+    { seed: 'remote', urlMode: 'absolute' },
+    { seed: 'remote', urlMode: 'relative' },
+    { seed: 'local', urlMode: 'absolute' },
+    { seed: 'local', urlMode: 'relative' },
+    { seed: 'none', urlMode: 'absolute' },
+    { seed: 'none', urlMode: 'relative' },
+  ] as const)(
+    'gh-pages worktree matrix: seed=%s urlMode=%s',
+    ({ seed, urlMode }) => {
+      it(`publishes and validates index.yaml for seed=${seed}, urlMode=${urlMode}`, async () => {
+        execSync('git init -b main', { cwd: workdir });
+        execSync('git config user.email "ci@example.com"', { cwd: workdir });
+        execSync('git config user.name "CI Tester"', { cwd: workdir });
+        execSync('git add .', { cwd: workdir });
+        execSync('git commit -m "init matrix repo"', { cwd: workdir });
+
+        const remoteDir = path.join(workdir, `.remote.${seed}.${urlMode}.git`);
+        execSync(`git init --bare "${remoteDir}"`);
+        execSync(`git remote add origin "${remoteDir}"`, { cwd: workdir });
+        execSync('git push -u origin main', { cwd: workdir });
+
+        if (seed === 'remote') {
+          const tmp = path.join(workdir, `.seed-${seed}-${urlMode}`);
+          execSync(`git worktree add --detach "${tmp}"`, { cwd: workdir });
+          execSync(`git -C "${tmp}" switch --orphan gh-pages`);
+          execSync(`git -C "${tmp}" reset --hard`);
+          const chartsDir = path.join(tmp, 'charts');
+          fs.mkdirSync(chartsDir, { recursive: true });
+          const seeded = yaml.stringify({ apiVersion: 'v1', entries: {} });
+          fs.writeFileSync(path.join(chartsDir, 'index.yaml'), seeded, 'utf8');
+          execSync(`git -C "${tmp}" add .`);
+          execSync(`git -C "${tmp}" commit -m "seed remote gh-pages"`);
+          execSync(`git -C "${tmp}" push origin gh-pages`);
+          execSync(`git worktree remove "${tmp}" --force`, { cwd: workdir });
+          execSync('git branch -D gh-pages || true', { cwd: workdir });
+        } else if (seed === 'local') {
+          const tmp = path.join(workdir, `.seed-${seed}-${urlMode}`);
+          execSync(`git worktree add --detach "${tmp}"`, { cwd: workdir });
+          execSync(`git -C "${tmp}" switch --orphan gh-pages`);
+          execSync(`git -C "${tmp}" reset --hard`);
+          const chartsDir = path.join(tmp, 'charts');
+          fs.mkdirSync(chartsDir, { recursive: true });
+          const seeded = yaml.stringify({ apiVersion: 'v1', entries: {} });
+          fs.writeFileSync(path.join(chartsDir, 'index.yaml'), seeded, 'utf8');
+          execSync(`git -C "${tmp}" add .`);
+          execSync(`git -C "${tmp}" commit -m "seed local gh-pages"`);
+          execSync(`git -C "${tmp}" branch -M gh-pages`);
+          const head = execSync(`git -C "${tmp}" rev-parse gh-pages`)
+            .toString('utf8')
+            .trim();
+          execSync(`git update-ref refs/heads/gh-pages ${head}`, {
+            cwd: workdir,
+          });
+          execSync(`git worktree remove "${tmp}" --force`, { cwd: workdir });
+          execSync(
+            'git show-ref --verify --quiet refs/remotes/origin/gh-pages || true',
+            { cwd: workdir },
+          );
+        } else {
+          execSync('git branch -D gh-pages || true', { cwd: workdir });
+          execSync('git push origin :gh-pages || true', { cwd: workdir });
+        }
+
+        await prepare(
+          {
+            chartPath: chartPathInWorkdir,
+            helmImage: HELM_IMAGE,
+            docsImage: DOCS_IMAGE,
+            ghPages: {
+              enabled: true,
+              url:
+                urlMode === 'absolute'
+                  ? 'https://example.test/charts'
+                  : undefined,
+            },
+          },
+          {
+            logger,
+            cwd: workdir,
+            nextRelease: { version: '9.0.0' },
+          } as unknown as PrepareContext,
+        );
+
+        await expect(
+          publish(
+            {
+              chartPath: chartPathInWorkdir,
+              helmImage: HELM_IMAGE,
+              docsImage: DOCS_IMAGE,
+              ghPages: {
+                enabled: true,
+                branch: 'gh-pages',
+                dir: 'charts',
+                url:
+                  urlMode === 'absolute'
+                    ? 'https://example.test/charts'
+                    : undefined,
+              },
+            },
+            { logger, cwd: workdir } as unknown as PublishContext,
+          ),
+        ).resolves.toBeUndefined();
+
+        const lsRemote = execSync('git ls-remote --heads origin gh-pages', {
+          cwd: workdir,
+        }).toString('utf8');
+        expect(lsRemote).toMatch(/refs\/heads\/gh-pages/);
+
+        const checkDir = path.join(workdir, `.check-matrix-${seed}-${urlMode}`);
+        fs.mkdirSync(checkDir, { recursive: true });
+        execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
+        const indexPath = path.join(checkDir, 'charts', 'index.yaml');
+        expect(fs.existsSync(indexPath)).toBe(true);
+
+        const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
+          apiVersion: string;
+          entries: Record<string, Array<{ version: string; urls: string[] }>>;
+        };
+
+        expect(parsed.apiVersion).toBe('v1');
+        expect(parsed.entries.app).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ version: '9.0.0' }),
+          ]),
+        );
+
+        const entry = parsed.entries.app.find((e) => e.version === '9.0.0') as {
+          urls: string[];
+        };
+        expect(Array.isArray(entry.urls) && entry.urls.length > 0).toBe(true);
+
+        if (urlMode === 'absolute') {
+          expect(entry.urls).toEqual(
+            expect.arrayContaining([
+              expect.stringMatching(
+                /^https:\/\/example\.test\/charts\/app-9\.0\.0\.tgz$/,
+              ),
+            ]),
+          );
+        } else {
+          expect(entry.urls).toEqual(expect.arrayContaining(['app-9.0.0.tgz']));
+        }
+      }, 360_000);
+    },
+  );
 });

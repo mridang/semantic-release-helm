@@ -75,7 +75,8 @@ export interface HelmPluginConfig extends PluginConfig {
      */
     branch?: string;
     /**
-     * Subdirectory inside the gh-pages worktree where charts live (default "charts").
+     * Subdirectory inside the gh-pages worktree where charts live (default
+     * "charts").
      */
     dir?: string;
   };
@@ -87,7 +88,26 @@ export interface ChartYaml {
   [key: string]: string | number | boolean | object | undefined;
 }
 
-/** Execute a host command with logging and strict failure. */
+/**
+ * Execute a host command and return its trimmed stdout. All interactions are
+ * logged to the provided semantic-release logger. If the command produces no
+ * stdout, "(no output)" is logged for traceability.
+ *
+ * On failure, the function:
+ * - logs the failing command,
+ * - attempts to log captured stdout and stderr from the thrown error object,
+ * - rethrows the original error to preserve the exit semantics.
+ *
+ * The command is executed with stdio "pipe" and UTF-8 decoding so that stdout
+ * can be captured and returned to callers. The working directory is set to the
+ * repository root (semantic-release's `cwd`).
+ *
+ * @param cmd Shell command to execute.
+ * @param cwd Working directory for the command.
+ * @param logger semantic-release logger used for structured logs.
+ * @returns Trimmed stdout of the command.
+ * @throws Any error thrown by `execSync` is rethrown after being logged.
+ */
 function runHostCmd(
   cmd: string,
   cwd: string,
@@ -121,7 +141,20 @@ function runHostCmd(
   }
 }
 
-/** Run a Docker container with our repo mounted to /apps. */
+/**
+ * Run a Docker image with the repository mounted at `/apps` and a given set of
+ * CLI arguments. This builds a `docker run` invocation with a deterministic
+ * host mapping and working directory, then delegates to `runHostCmd`.
+ *
+ * The container runs to completion and is automatically removed (`--rm`). The
+ * function's purpose is to provide a small, audited surface for running Helm
+ * and related tooling in a clean environment.
+ *
+ * @param image Docker image name, including tag.
+ * @param args Arguments appended after the image in `docker run`.
+ * @param cwd Host working directory, mounted to `/apps` in the container.
+ * @param logger semantic-release logger used for structured logs.
+ */
 function runDockerCmd(
   image: string,
   args: string[],
@@ -140,7 +173,19 @@ function runDockerCmd(
   void runHostCmd(full, cwd, logger);
 }
 
-/** Run a shell one-liner inside a Docker container. */
+/**
+ * Run a shell script inside a Docker container. This composes a `docker run`
+ * command that sets `/bin/sh -lc <script>` as entrypoint, uses `/apps` as the
+ * working directory, and mounts the repo as in `runDockerCmd`.
+ *
+ * The script is JSON-encoded to avoid quoting pitfalls on the host shell. The
+ * function returns only after the container exits.
+ *
+ * @param image Docker image name, including tag.
+ * @param script A POSIX shell one-liner to execute via `/bin/sh -lc`.
+ * @param cwd Host working directory, mounted to `/apps` in the container.
+ * @param logger semantic-release logger used for structured logs.
+ */
 function runDockerShell(
   image: string,
   script: string,
@@ -161,7 +206,15 @@ function runDockerShell(
   void runHostCmd(full, cwd, logger);
 }
 
-/** Pull a Docker image; throw SemanticReleaseError on failure. */
+/**
+ * Pull a Docker image to ensure availability at runtime. On failure, this
+ * converts the underlying error into a `SemanticReleaseError` so the failure
+ * is reported with a stable code (`EIMAGEPULLFAILED`).
+ *
+ * @param image Docker image to pull.
+ * @param logger semantic-release logger used for structured logs.
+ * @throws SemanticReleaseError if the image cannot be pulled.
+ */
 function verifyDockerImage(image: string, logger: Context['logger']): void {
   const cmd = `docker pull ${image}`;
   logger.log(`$ ${cmd}`);
@@ -178,21 +231,42 @@ function verifyDockerImage(image: string, logger: Context['logger']): void {
   }
 }
 
-/** Update version in a Chart.yaml string while preserving other fields. */
+/**
+ * Return a new Chart.yaml string with only the `version` field updated. The
+ * function parses the input YAML, shallow-copies the object to avoid losing
+ * unknown fields, overrides `version`, and stringifies the result.
+ *
+ * @param rawYaml Raw Chart.yaml content.
+ * @param version Version string to set.
+ * @returns Updated YAML string.
+ */
 function setChartVersion(rawYaml: string, version: string): string {
   const parsed: ChartYaml = yaml.parse(rawYaml) as ChartYaml;
   const updated: ChartYaml = { ...parsed, version };
   return yaml.stringify(updated);
 }
 
-/** Extract host[:port] from an oci:// URL. */
+/**
+ * From an `oci://` URL, extract the `host[:port]` component. This is used to
+ * prepare login and insecure-registry configuration for Helm Registry v2.
+ *
+ * @param ociRepo Repository URL, e.g. `oci://ghcr.io/org/charts`.
+ * @returns Host, possibly with an explicit port.
+ */
 function extractHostPortFromOci(ociRepo: string): string {
   const trimmed = ociRepo.replace(/^oci:\/\//, '');
   const i = trimmed.indexOf('/');
   return i === -1 ? trimmed : trimmed.slice(0, i);
 }
 
-/** Resolve OCI credentials from config or environment. */
+/**
+ * Resolve OCI credentials from plugin config or environment. When present,
+ * boolean flags indicate whether a username or password was supplied so that
+ * callers can validate completeness before attempting a login.
+ *
+ * @param cfg Helm plugin configuration.
+ * @returns Resolved username/password and presence flags.
+ */
 function resolveCreds(cfg: HelmPluginConfig): {
   username?: string;
   password?: string;
@@ -204,7 +278,21 @@ function resolveCreds(cfg: HelmPluginConfig): {
   return { username, password, haveUser: !!username, havePass: !!password };
 }
 
-/** semantic-release: verify conditions */
+/**
+ * semantic-release `verifyConditions` step. Verifies that:
+ * - Docker is available,
+ * - required Docker images can be pulled,
+ * - the Chart.yaml exists at the configured path,
+ * - OCI configuration is coherent if provided.
+ *
+ * The method logs the effective Helm/docs images, reports whether GH Pages
+ * mode is enabled and the resolved public URL, and rejects incomplete OCI
+ * credentials early with a stable error code.
+ *
+ * @param pluginConfig Plugin configuration supplied by semantic-release.
+ * @param context semantic-release context (logger, cwd, etc).
+ * @throws SemanticReleaseError when a precondition is not satisfied.
+ */
 export async function verifyConditions(
   pluginConfig: HelmPluginConfig,
   context: Context,
@@ -212,7 +300,6 @@ export async function verifyConditions(
   const { logger, cwd } = context;
   logger.log('verifyConditions: starting');
 
-  // Docker
   try {
     void runHostCmd('docker version', cwd, logger);
   } catch {
@@ -231,7 +318,6 @@ export async function verifyConditions(
   verifyDockerImage(helmImage, logger);
   verifyDockerImage(docsImage, logger);
 
-  // Chart exists
   const chartYamlPath = `${cwd}/${pluginConfig.chartPath}/Chart.yaml`;
   if (!fs.existsSync(chartYamlPath)) {
     throw new SemanticReleaseError(
@@ -242,7 +328,6 @@ export async function verifyConditions(
   }
   logger.log(`verifyConditions: found chart at ${chartYamlPath}`);
 
-  // gh-pages
   const ghEnabled = pluginConfig.ghPages?.enabled !== false;
   if (ghEnabled) {
     const url = pluginConfig.ghPages?.url;
@@ -253,12 +338,13 @@ export async function verifyConditions(
     );
   }
 
-  // OCI
   const ociRepo = pluginConfig.ociRepo;
   if (ociRepo) {
     const { haveUser, havePass } = resolveCreds(pluginConfig);
     logger.log(
-      `verifyConditions: OCI enabled -> repo="${ociRepo}", insecure=${pluginConfig.ociInsecure === true}, usernamePresent=${haveUser}, passwordPresent=${havePass}`,
+      `verifyConditions: OCI enabled -> repo="${ociRepo}", ` +
+        `insecure=${pluginConfig.ociInsecure === true}, ` +
+        `usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
     if ((haveUser && !havePass) || (!haveUser && havePass)) {
       throw new SemanticReleaseError(
@@ -272,7 +358,22 @@ export async function verifyConditions(
   logger.log('verifyConditions: ok');
 }
 
-/** semantic-release: prepare (bump chart version, lint, template, docs, package) */
+/**
+ * semantic-release `prepare` step. Performs all changes that must be included
+ * in the release commit before publishing:
+ * - sets the chart version in Chart.yaml to `nextRelease.version`,
+ * - lints and templates the chart with Helm to fail early on errors,
+ * - runs `helm-docs` in the chart directory (best-effort),
+ * - packages the chart into `dist/charts/*.tgz`.
+ *
+ * The function intentionally does not create `index.yaml` in `dist/charts` so
+ * tests can assert that merge logic occurs only during the gh-pages publish
+ * step.
+ *
+ * @param pluginConfig Plugin configuration supplied by semantic-release.
+ * @param context semantic-release context (cwd, logger, nextRelease).
+ * @throws SemanticReleaseError if required inputs are missing or invalid.
+ */
 export async function prepare(
   pluginConfig: HelmPluginConfig,
   context: Context,
@@ -298,13 +399,11 @@ export async function prepare(
     );
   }
 
-  // Bump Chart.yaml version
   const raw = fs.readFileSync(chartYamlPath, 'utf8');
   const updatedYaml = setChartVersion(raw, version);
   fs.writeFileSync(chartYamlPath, updatedYaml, 'utf8');
   logger.log(`prepare: updated Chart.yaml to version ${version}`);
 
-  // Lint + render
   const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
   void runDockerCmd(helmImage, ['lint', pluginConfig.chartPath], cwd, logger);
   void runDockerCmd(
@@ -314,7 +413,6 @@ export async function prepare(
     logger,
   );
 
-  // helm-docs (best-effort)
   const docsImage = pluginConfig.docsImage ?? 'jnorwood/helm-docs:v1.14.2';
   const docsArgs = pluginConfig.docsArgs ?? ['--template-files=README.md'];
   try {
@@ -331,7 +429,6 @@ export async function prepare(
     );
   }
 
-  // Package chart(s)
   const outDir = `${cwd}/dist/charts`;
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
@@ -344,11 +441,37 @@ export async function prepare(
   );
   logger.log('prepare: packaged chart(s) into dist/charts');
 
-  // IMPORTANT: Do NOT generate dist/charts/index.yaml here. Tests assert it.
   logger.log('prepare: ok');
 }
 
-/** semantic-release: publish (OCI and/or gh-pages). */
+/**
+ * semantic-release `publish` step. Publishes the packaged chart(s) to:
+ * - an OCI registry (optional), and/or
+ * - a GitHub Pages branch (default).
+ *
+ * OCI publish:
+ * - optionally writes an insecure registry config for Helm if requested,
+ * - performs a `helm registry login` when credentials are supplied,
+ * - pushes each packaged `*.tgz` to the configured `ociRepo`.
+ *
+ * GitHub Pages publish:
+ * - cleans any prior temporary worktree,
+ * - fetches the remote branch and creates the worktree from:
+ *   1) the remote branch when available,
+ *   2) otherwise an existing local branch,
+ *   3) otherwise a fresh orphan branch,
+ * - copies `*.tgz` into the configured subdirectory,
+ * - merges `index.yaml` in pure YAML to preserve history across charts,
+ * - commits and pushes changes to the gh-pages branch,
+ * - removes the temporary worktree.
+ *
+ * The remote-first worktree creation avoids non-fast-forward push failures when
+ * a remote `gh-pages` already exists with history.
+ *
+ * @param pluginConfig Plugin configuration supplied by semantic-release.
+ * @param context semantic-release context (cwd, logger).
+ * @throws SemanticReleaseError if no packaged charts are present.
+ */
 export async function publish(
   pluginConfig: HelmPluginConfig,
   context: Context,
@@ -373,7 +496,6 @@ export async function publish(
   }
   logger.log(`publish: found ${files.length} packaged chart(s)`);
 
-  // 1) Push to OCI (optional)
   if (pluginConfig.ociRepo) {
     const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
     const hostPort = extractHostPortFromOci(pluginConfig.ociRepo);
@@ -383,7 +505,9 @@ export async function publish(
       resolveCreds(pluginConfig);
 
     logger.log(
-      `publish: OCI mode -> repo="${pluginConfig.ociRepo}", insecure=${pluginConfig.ociInsecure === true}, usernamePresent=${haveUser}, passwordPresent=${havePass}`,
+      `publish: OCI mode -> repo="${pluginConfig.ociRepo}", ` +
+        `insecure=${pluginConfig.ociInsecure === true}, ` +
+        `usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
 
     const steps: string[] = [];
@@ -396,12 +520,12 @@ export async function publish(
     }
     if (haveUser && havePass) {
       steps.push(
-        `helm registry login${insecureLoginFlag} --username=${username} --password=${password} ${hostPort}`,
+        `helm registry login${insecureLoginFlag} ` +
+          `--username=${username} --password=${password} ${hostPort}`,
       );
     }
 
     for (const tgz of files) {
-      // Inside container, /apps is the cwd; dist/charts/* exists there.
       steps.push(`helm push ${tgz} ${pluginConfig.ociRepo}${plainHttpFlag}`);
     }
 
@@ -413,32 +537,30 @@ export async function publish(
     );
   }
 
-  // 2) Update gh-pages (default enabled)
   const ghEnabled = pluginConfig.ghPages?.enabled !== false;
   if (ghEnabled) {
     const ghCfg = pluginConfig.ghPages ?? {};
     const ghBranch = ghCfg.branch ?? 'gh-pages';
     const ghRepo = ghCfg.repo ?? 'origin';
     const ghDir = ghCfg.dir ?? 'charts';
-    const baseUrl = ghCfg.url; // may be undefined
+    const baseUrl = ghCfg.url;
 
     const tmpWorktree = path.join(cwd, '.gh-pages-tmp');
     const srcDir = path.join(cwd, 'dist', 'charts');
     const dstDir = path.join(tmpWorktree, ghDir);
 
-    // Clean any previous worktree
     try {
       runHostCmd(
-        `git worktree remove "${tmpWorktree}" --force || echo "gh-pages cleanup: not a worktree"`,
+        `git worktree remove "${tmpWorktree}" --force || ` +
+          `echo "gh-pages cleanup: not a worktree"`,
         cwd,
         logger,
       );
     } catch {
-      /* ignore */
+      // ignore
     }
     runHostCmd(`rm -rf "${tmpWorktree}"`, cwd, logger);
 
-    // Create worktree for gh-pages (or orphan if branch doesn't exist)
     const refCheck = `git show-ref --verify --quiet "refs/heads/${ghBranch}"`;
     const addExisting = `git worktree add "${tmpWorktree}" ${ghBranch}`;
     const addOrphan = [
@@ -446,9 +568,20 @@ export async function publish(
       `git -C "${tmpWorktree}" switch --orphan ${ghBranch}`,
       `git -C "${tmpWorktree}" reset --hard`,
     ].join(' && ');
-    runHostCmd(`${refCheck} && ${addExisting} || (${addOrphan})`, cwd, logger);
 
-    // Ensure destination dir exists and copy packaged .tgz
+    runHostCmd(`git fetch ${ghRepo} ${ghBranch} || true`, cwd, logger);
+    const refRemoteCheck = `git show-ref --verify --quiet "refs/remotes/${ghRepo}/${ghBranch}"`;
+    const addFromRemote =
+      `git worktree add "${tmpWorktree}" -B ${ghBranch} ` +
+      `${ghRepo}/${ghBranch}`;
+
+    runHostCmd(
+      `${refRemoteCheck} && (${addFromRemote}) || ` +
+        `(${refCheck} && (${addExisting}) || (${addOrphan}))`,
+      cwd,
+      logger,
+    );
+
     fs.mkdirSync(dstDir, { recursive: true });
     for (const entry of fs.readdirSync(srcDir)) {
       if (entry.endsWith('.tgz')) {
@@ -458,7 +591,6 @@ export async function publish(
       }
     }
 
-    // Merge index.yaml purely in YAML (preserves historical + other chart names)
     const indexPath = path.join(dstDir, 'index.yaml');
     let indexDoc = HelmIndex.fromFile(indexPath);
 
@@ -466,7 +598,6 @@ export async function publish(
     for (const tgz of files) {
       const abs = path.isAbsolute(tgz) ? tgz : path.join(cwd, tgz);
       const filename = path.basename(abs);
-      // If url is provided, write absolute URLs; otherwise use file names.
       const extra =
         typeof baseUrl === 'string' && baseUrl.trim().length > 0
           ? undefined
@@ -482,10 +613,11 @@ export async function publish(
 
     indexDoc.writeTo(indexPath);
 
-    // Commit & push
     runHostCmd(`git -C "${tmpWorktree}" add .`, cwd, logger);
     runHostCmd(
-      `git -C "${tmpWorktree}" commit -m "docs(charts): update Helm repo (merge index) [skip ci]" || echo "No changes"`,
+      `git -C "${tmpWorktree}" commit -m ` +
+        `"docs(charts): update Helm repo (merge index) [skip ci]" ` +
+        `|| echo "No changes"`,
       cwd,
       logger,
     );
@@ -495,24 +627,24 @@ export async function publish(
       logger,
     );
 
-    // Cleanup worktree
     try {
       runHostCmd(
-        `git worktree remove "${tmpWorktree}" --force || echo "gh-pages worktree already removed or not a working tree"`,
+        `git worktree remove "${tmpWorktree}" --force || ` +
+          `echo "gh-pages worktree already removed or not a working tree"`,
         cwd,
         logger,
       );
     } catch {
-      /* ignore */
+      // ignore
     }
 
     logger.log(
-      '{ "helm": { "published": "gh-pages", "path": "dist/charts", "merged": true } }',
+      '{ "helm": { "published": "gh-pages", "path": "dist/charts", ' +
+        '"merged": true } }',
     );
   }
 
   logger.log('publish: done');
 }
 
-// noinspection JSUnusedGlobalSymbols
 export default { verifyConditions, prepare, publish };
