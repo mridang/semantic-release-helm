@@ -1,4 +1,3 @@
-// file: test/index.test.ts
 import {
   describe,
   it,
@@ -14,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { execSync } from 'node:child_process';
 import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
 
+// noinspection ES6PreferShortImport
 import {
   verifyConditions,
   prepare,
@@ -41,7 +41,7 @@ function pull(image: string): void {
   execSync(`docker pull ${image}`, { stdio: 'pipe' });
 }
 
-describe('semantic-release-helm (integration, real Docker)', () => {
+describe('semantic-release-helm (integration, real Docker + local git)', () => {
   let registry: StartedTestContainer | null = null;
   let registryPort = 0;
 
@@ -106,7 +106,6 @@ describe('semantic-release-helm (integration, real Docker)', () => {
       chartPath: chartPathInWorkdir,
       helmImage: HELM_IMAGE,
       docsImage: DOCS_IMAGE,
-      // leave ghPages undefined to use default GH Pages mode
       ociInsecure: true,
     };
     const ctx = { logger, cwd: workdir } as unknown as VerifyConditionsContext;
@@ -166,7 +165,7 @@ describe('semantic-release-helm (integration, real Docker)', () => {
       helmImage: HELM_IMAGE,
       docsImage: DOCS_IMAGE,
       ociRepo,
-      ociInsecure: true, // HTTP registry
+      ociInsecure: true,
     };
     const pubCtx = { logger, cwd: workdir } as unknown as PublishContext;
 
@@ -222,7 +221,6 @@ describe('semantic-release-helm (integration, real Docker)', () => {
     };
     const ctx = { logger, cwd: workdir } as unknown as PublishContext;
 
-    // Ensure no dist/charts exists
     fs.rmSync(path.join(workdir, 'dist'), { recursive: true, force: true });
 
     await expect(publish(cfg, ctx)).rejects.toHaveProperty(
@@ -230,4 +228,59 @@ describe('semantic-release-helm (integration, real Docker)', () => {
       'ENOPACKAGEDCHART',
     );
   }, 120_000);
+
+  it('publish writes charts to a gh-pages branch in a local git repo (with a real origin remote)', async () => {
+    execSync('git init -b main', { cwd: workdir });
+    execSync('git config user.email "ci@example.com"', { cwd: workdir });
+    execSync('git config user.name "CI Tester"', { cwd: workdir });
+    execSync('git add .', { cwd: workdir });
+    execSync('git commit -m "init repo for gh-pages test"', { cwd: workdir });
+
+    const remoteDir = path.join(workdir, '.remote.git');
+    execSync(`git init --bare "${remoteDir}"`);
+    execSync(`git remote add origin "${remoteDir}"`, { cwd: workdir });
+    execSync('git push -u origin main', { cwd: workdir });
+
+    const prepCfg: HelmPluginConfig = {
+      chartPath: chartPathInWorkdir,
+      helmImage: HELM_IMAGE,
+      docsImage: DOCS_IMAGE,
+      ghPages: { enabled: true, url: 'https://example.test/charts' },
+    };
+    const prepCtx = {
+      logger,
+      cwd: workdir,
+      nextRelease: { version: '0.5.0' },
+    } as unknown as PrepareContext;
+    await prepare(prepCfg, prepCtx);
+
+    const pubCfg: HelmPluginConfig = {
+      chartPath: chartPathInWorkdir,
+      helmImage: HELM_IMAGE,
+      docsImage: DOCS_IMAGE,
+      ghPages: { enabled: true, branch: 'gh-pages', dir: 'charts' },
+    };
+    const pubCtx = { logger, cwd: workdir } as unknown as PublishContext;
+
+    await expect(publish(pubCfg, pubCtx)).resolves.toBeUndefined();
+
+    const branches = execSync('git branch --list', { cwd: workdir }).toString(
+      'utf8',
+    );
+    expect(branches).toMatch(/gh-pages/);
+
+    const lsRemote = execSync('git ls-remote --heads origin gh-pages', {
+      cwd: workdir,
+    }).toString('utf8');
+    expect(lsRemote).toMatch(/refs\/heads\/gh-pages/);
+
+    const checkDir = path.join(workdir, '.check-gh-pages');
+    fs.mkdirSync(checkDir, { recursive: true });
+    execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
+    const chartsDir = path.join(checkDir, 'charts');
+    expect(fs.existsSync(chartsDir)).toBe(true);
+    const ghFiles = fs.readdirSync(chartsDir);
+    expect(ghFiles.includes('index.yaml')).toBe(true);
+    expect(ghFiles.some((f) => f.endsWith('.tgz'))).toBe(true);
+  }, 240_000);
 });

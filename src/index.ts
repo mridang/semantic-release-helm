@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 // @ts-expect-error semantic-release types are not bundled
 import { Context, PluginConfig } from 'semantic-release';
 // @ts-expect-error semantic-release types are not bundled
@@ -18,6 +19,9 @@ export interface HelmPluginConfig extends PluginConfig {
   ghPages?: {
     enabled?: boolean;
     url?: string;
+    repo?: string;
+    branch?: string;
+    dir?: string;
   };
 }
 
@@ -165,12 +169,6 @@ function resolveCreds(cfg: HelmPluginConfig): {
 
 /**
  * Verify environment and prerequisites for this plugin.
- *
- * - Ensures Docker is usable.
- * - Pulls required images.
- * - Checks Chart.yaml exists.
- * - Logs which publish mode will run (GH Pages default vs OCI).
- * - Validates credential shape when provided.
  */
 export async function verifyConditions(
   pluginConfig: HelmPluginConfig,
@@ -238,7 +236,7 @@ export async function verifyConditions(
 }
 
 /**
- * Prepare: bump chart version, lint/template, run helm-docs, package, and build GH Pages index.
+ * Prepare the chart: bump version, lint/template, run helm-docs, package, and build GH Pages index when applicable.
  */
 export async function prepare(
   pluginConfig: HelmPluginConfig,
@@ -306,7 +304,6 @@ export async function prepare(
   );
   logger.log('prepare: packaged chart(s) into dist/charts');
 
-  // GH Pages index (default)
   if (!pluginConfig.ociRepo) {
     const url = pluginConfig.ghPages?.url;
     const indexArgs = url
@@ -320,8 +317,7 @@ export async function prepare(
 }
 
 /**
- * Publish: if OCI is configured, push tarballs to the registry.
- * GH Pages mode is "prepare-only" (files are ready in dist/charts).
+ * Publish packaged charts to OCI when configured, otherwise publish to a gh-pages branch.
  */
 export async function publish(
   pluginConfig: HelmPluginConfig,
@@ -347,51 +343,96 @@ export async function publish(
   }
   logger.log(`publish: found ${files.length} packaged chart(s)`);
 
-  if (!pluginConfig.ociRepo) {
+  if (pluginConfig.ociRepo) {
+    const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
+    const hostPort = extractHostPortFromOci(pluginConfig.ociRepo);
+    const plainHttpFlag = pluginConfig.ociInsecure ? ' --plain-http' : '';
+    const insecureLoginFlag = pluginConfig.ociInsecure ? ' --insecure' : '';
+    const { username, password, haveUser, havePass } =
+      resolveCreds(pluginConfig);
+
     logger.log(
-      'publish: GH Pages mode; nothing to push (artifact upload left to CI)',
+      `publish: OCI mode -> repo="${pluginConfig.ociRepo}", insecure=${pluginConfig.ociInsecure === true}, usernamePresent=${haveUser}, passwordPresent=${havePass}`,
+    );
+
+    const steps: string[] = [];
+    if (pluginConfig.ociInsecure) {
+      const cfgJson = `{"auths":{"${hostPort}":{"insecure":true}}}`;
+      steps.push(
+        'mkdir -p /root/.config/helm/registry',
+        `printf %s '${cfgJson}' > /root/.config/helm/registry/config.json`,
+      );
+    }
+    if (haveUser && havePass) {
+      steps.push(
+        `helm registry login${insecureLoginFlag} --username=${username} --password=${password} ${hostPort}`,
+      );
+    }
+    for (const tgz of files) {
+      steps.push(`helm push ${tgz} ${pluginConfig.ociRepo}${plainHttpFlag}`);
+    }
+    const script = steps.join(' && ');
+    runDockerShell(helmImage, script, cwd, logger);
+
+    logger.log(
+      `{ "helm": { "pushed": ${files.length}, "repo": "${pluginConfig.ociRepo}" } }`,
     );
     return;
   }
 
-  const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
-  const hostPort = extractHostPortFromOci(pluginConfig.ociRepo);
-  const plainHttpFlag = pluginConfig.ociInsecure ? ' --plain-http' : '';
-  const insecureLoginFlag = pluginConfig.ociInsecure ? ' --insecure' : '';
+  const ghCfg = pluginConfig.ghPages ?? {};
+  const ghBranch = ghCfg.branch ?? 'gh-pages';
+  const ghRepo = ghCfg.repo ?? 'origin';
+  const ghDir = ghCfg.dir ?? 'charts';
+  const tmpWorktree = path.join(cwd, '.gh-pages-tmp');
+  const srcDir = path.join(cwd, 'dist', 'charts');
+  const dstDir = path.join(tmpWorktree, ghDir);
 
-  const { username, password, haveUser, havePass } = resolveCreds(pluginConfig);
+  try {
+    runHostCmd(`git worktree remove "${tmpWorktree}" --force`, cwd, logger);
+  } catch {
+    logger.log('publish: gh-pages cleanup skipped (no existing worktree)');
+  }
+  runHostCmd(`rm -rf "${tmpWorktree}"`, cwd, logger);
 
-  logger.log(
-    `publish: OCI mode -> repo="${pluginConfig.ociRepo}", insecure=${pluginConfig.ociInsecure === true}, usernamePresent=${haveUser}, passwordPresent=${havePass}`,
+  const refCheck = `git show-ref --verify --quiet "refs/heads/${ghBranch}"`;
+  const addExisting = `git worktree add "${tmpWorktree}" ${ghBranch}`;
+  const addOrphan = [
+    `git worktree add --detach "${tmpWorktree}"`,
+    `git -C "${tmpWorktree}" switch --orphan ${ghBranch}`,
+    `git -C "${tmpWorktree}" reset --hard`,
+  ].join(' && ');
+  runHostCmd(`${refCheck} && ${addExisting} || (${addOrphan})`, cwd, logger);
+
+  fs.mkdirSync(dstDir, { recursive: true });
+  for (const entry of fs.readdirSync(srcDir)) {
+    const from = path.join(srcDir, entry);
+    const to = path.join(dstDir, entry);
+    fs.copyFileSync(from, to);
+  }
+
+  runHostCmd(`git -C "${tmpWorktree}" add .`, cwd, logger);
+  runHostCmd(
+    `git -C "${tmpWorktree}" commit -m "docs(charts): update Helm repo [skip ci]" || echo "No changes"`,
+    cwd,
+    logger,
   );
+  runHostCmd(`git -C "${tmpWorktree}" push ${ghRepo} ${ghBranch}`, cwd, logger);
+  runHostCmd(`git -C "${tmpWorktree}" push ${ghRepo} ${ghBranch}`, cwd, logger);
 
-  const steps: string[] = [];
-
-  if (pluginConfig.ociInsecure) {
-    const cfgJson = `{"auths":{"${hostPort}":{"insecure":true}}}`;
-    steps.push(
-      'mkdir -p /root/.config/helm/registry',
-      `printf %s '${cfgJson}' > /root/.config/helm/registry/config.json`,
+  try {
+    runHostCmd(
+      `git worktree remove "${tmpWorktree}" --force || echo "gh-pages worktree already removed or not a working tree"`,
+      cwd,
+      logger,
+    );
+  } catch {
+    logger.log(
+      'publish: worktree remove failed; directory may already be gone',
     );
   }
 
-  // Only log in if we actually have credentials.
-  if (haveUser && havePass) {
-    steps.push(
-      `helm registry login${insecureLoginFlag} --username=${username} --password=${password} ${hostPort}`,
-    );
-  }
-
-  for (const tgz of files) {
-    steps.push(`helm push ${tgz} ${pluginConfig.ociRepo}${plainHttpFlag}`);
-  }
-
-  const script = steps.join(' && ');
-  runDockerShell(helmImage, script, cwd, logger);
-
-  logger.log(
-    `{ "helm": { "pushed": ${files.length}, "repo": "${pluginConfig.ociRepo}" } }`,
-  );
+  logger.log('{ "helm": { "published": "gh-pages", "path": "dist/charts" } }');
 }
 
 // noinspection JSUnusedGlobalSymbols
