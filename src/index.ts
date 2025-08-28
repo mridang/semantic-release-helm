@@ -416,10 +416,14 @@ export async function prepare(
   const docsImage = pluginConfig.docsImage ?? 'jnorwood/helm-docs:v1.14.2';
   const docsArgs = pluginConfig.docsArgs ?? ['--template-files=README.md'];
   try {
-    void runDockerCmd(
+    runDockerCmd(
       docsImage,
-      ['helm-docs', ...docsArgs],
-      `${cwd}/${pluginConfig.chartPath}`,
+      [
+        'helm-docs',
+        `--chart-search-root=${pluginConfig.chartPath}`,
+        ...docsArgs,
+      ],
+      cwd,
       logger,
     );
     logger.log('prepare: helm-docs succeeded');
