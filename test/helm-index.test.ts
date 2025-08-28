@@ -3,18 +3,19 @@ import * as path from 'path';
 import * as yaml from 'yaml';
 import { HelmChart } from '../src/helm-chart.js';
 import { HelmIndex, ChartEntry, HelmIndexDoc } from '../src/helm-index.js';
-import { fileURLToPath } from 'url';
+import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { withTempDir } from './utils/tmpdir.js';
+import { sha256OfFile } from './utils/filehash.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const FIXED_TIME = new Date('2001-01-02T03:04:05.000Z');
+const FIXED_ISO = FIXED_TIME.toISOString();
 
-function tmpdir(): string {
-  const d = path.join(__dirname, `.tmp-index-${Date.now()}`);
-  fs.mkdirSync(d, { recursive: true });
-  return d;
-}
-
-function writeChartYaml(dir: string, name: string, version: string): string {
+function writeChartYaml(
+  dir: string,
+  name: string,
+  version: string,
+  extra?: Record<string, unknown>,
+): string {
   const chartDir = path.join(dir, 'charts', name);
   fs.mkdirSync(chartDir, { recursive: true });
   const chartFile = path.join(chartDir, 'Chart.yaml');
@@ -23,6 +24,7 @@ function writeChartYaml(dir: string, name: string, version: string): string {
     name,
     version,
     description: 'X',
+    ...(extra ?? {}),
   });
   fs.writeFileSync(chartFile, doc, 'utf8');
   return chartDir;
@@ -40,91 +42,355 @@ function writeTgz(
   return tgz;
 }
 
+function readIndex(idxPath: string): HelmIndexDoc {
+  return yaml.parse(fs.readFileSync(idxPath, 'utf8')) as HelmIndexDoc;
+}
+
+beforeAll(() => {
+  jest.useFakeTimers();
+  jest.setSystemTime(FIXED_TIME);
+});
+
+afterAll(() => {
+  jest.useRealTimers();
+});
+
 describe('HelmIndex', () => {
-  it('starts empty when file does not exist', () => {
-    const base = tmpdir();
-    const idxPath = path.join(base, 'charts', 'index.yaml');
-    const index = HelmIndex.fromFile(idxPath);
-    index.writeTo(idxPath);
-    const raw = fs.readFileSync(idxPath, 'utf8');
-    const parsed = yaml.parse(raw) as HelmIndexDoc;
-    expect(parsed).toEqual({
-      apiVersion: 'v1',
-      entries: {},
-    });
-  });
+  /**
+   * Creates a new index file when none exists and ensures the minimal valid
+   * structure is persisted with apiVersion v1 and empty entries map.
+   */
+  it(
+    'initializes empty index on first write',
+    withTempDir((base: string) => {
+      const idxPath = path.join(base, 'charts', 'index.yaml');
+      HelmIndex.fromFile(idxPath).writeTo(idxPath);
+      expect(readIndex(idxPath)).toEqual({ apiVersion: 'v1', entries: {} });
+    }),
+  );
 
-  it('append creates entry and preserves subsequent versions', () => {
-    const base = tmpdir();
-    const chartDir = writeChartYaml(base, 'dummy', '1.0.0');
-    const chart100 = HelmChart.from(chartDir);
-    const tgz100 = writeTgz(base, 'dummy', '1.0.0', 'a');
-    const idxPath = path.join(base, 'charts', 'index.yaml');
+  /**
+   * Appends entries across releases, preserving prior versions and ordering
+   * newest first. Verifies digest, created, urls, and passthrough fields.
+   */
+  it(
+    'appends versions and keeps newest first',
+    withTempDir((base: string) => {
+      const idxPath = path.join(base, 'charts', 'index.yaml');
+      const c100 = HelmChart.from(writeChartYaml(base, 'dummy', '1.0.0'));
+      const t100 = writeTgz(base, 'dummy', '1.0.0', 'a');
+      HelmIndex.fromFile(idxPath)
+        .append(c100, t100, 'https://example.test/charts', {
+          appVersion: '1.0.0',
+        })
+        .writeTo(idxPath);
 
-    const i0 = HelmIndex.fromFile(idxPath);
-    const i1 = i0.append(chart100, tgz100, 'https://example.test/charts', {
-      appVersion: '1.0.0',
-    });
-    i1.writeTo(idxPath);
+      const c110 = c100.withVersion('1.1.0');
+      const t110 = writeTgz(base, 'dummy', '1.1.0', 'b');
+      HelmIndex.fromFile(idxPath)
+        .append(c110, t110, 'https://example.test/charts')
+        .writeTo(idxPath);
 
-    const chart110 = chart100.withVersion('1.1.0');
-    const tgz110 = writeTgz(base, 'dummy', '1.1.0', 'b');
+      expect(readIndex(idxPath)).toEqual({
+        apiVersion: 'v1',
+        generated: FIXED_ISO,
+        entries: {
+          dummy: [
+            {
+              apiVersion: 'v2',
+              name: 'dummy',
+              version: '1.1.0',
+              created: FIXED_ISO,
+              digest: sha256OfFile(t110),
+              urls: ['https://example.test/charts/dummy-1.1.0.tgz'],
+              description: 'X',
+            } as ChartEntry,
+            {
+              apiVersion: 'v2',
+              name: 'dummy',
+              version: '1.0.0',
+              created: FIXED_ISO,
+              digest: sha256OfFile(t100),
+              urls: ['https://example.test/charts/dummy-1.0.0.tgz'],
+              description: 'X',
+              appVersion: '1.0.0',
+            } as ChartEntry,
+          ],
+        },
+      });
+    }),
+  );
 
-    const i2 = HelmIndex.fromFile(idxPath);
-    const i3 = i2.append(chart110, tgz110, 'https://example.test/charts');
-    i3.writeTo(idxPath);
+  /**
+   * Replaces an existing version rather than duplicating it. Ensures digest
+   * and urls reflect the latest artifact for that version.
+   */
+  it(
+    'replaces same version without duplication',
+    withTempDir((base: string) => {
+      const idxPath = path.join(base, 'charts', 'index.yaml');
+      const chart = HelmChart.from(writeChartYaml(base, 'demo', '2.0.0'));
 
-    const raw = fs.readFileSync(idxPath, 'utf8');
-    const parsed = yaml.parse(raw) as { entries: { dummy: ChartEntry[] } };
-    expect(parsed.entries.dummy.map((e) => e.version)).toEqual([
-      '1.1.0',
-      '1.0.0',
-    ]);
-  });
+      const t1 = writeTgz(base, 'demo', '2.0.0', 'first');
+      HelmIndex.fromFile(idxPath)
+        .append(chart, t1, 'https://u.test/charts')
+        .writeTo(idxPath);
 
-  it('append replaces same version entry rather than duplicating', () => {
-    const base = tmpdir();
-    const chartDir = writeChartYaml(base, 'demo', '2.0.0');
-    const chart = HelmChart.from(chartDir);
-    const idxPath = path.join(base, 'charts', 'index.yaml');
+      const t2 = writeTgz(base, 'demo', '2.0.0', 'second');
+      HelmIndex.fromFile(idxPath)
+        .append(chart, t2, 'https://u.test/charts')
+        .writeTo(idxPath);
 
-    const tgz1 = writeTgz(base, 'demo', '2.0.0', 'first');
-    const i0 = HelmIndex.fromFile(idxPath);
-    const i1 = i0.append(chart, tgz1, 'https://u.test/charts');
-    i1.writeTo(idxPath);
+      expect(readIndex(idxPath)).toEqual({
+        apiVersion: 'v1',
+        generated: FIXED_ISO,
+        entries: {
+          demo: [
+            {
+              apiVersion: 'v2',
+              name: 'demo',
+              version: '2.0.0',
+              created: FIXED_ISO,
+              digest: sha256OfFile(t2),
+              urls: ['https://u.test/charts/demo-2.0.0.tgz'],
+              description: 'X',
+            },
+          ],
+        },
+      });
+    }),
+  );
 
-    const tgz2 = writeTgz(base, 'demo', '2.0.0', 'second');
-    const i2 = HelmIndex.fromFile(idxPath);
-    const i3 = i2.append(chart, tgz2, 'https://u.test/charts');
-    i3.writeTo(idxPath);
+  /**
+   * Sorts entries using semantic version order so that higher versions are
+   * listed before lower ones within a chart name group.
+   */
+  it(
+    'sorts entries by semver descending',
+    withTempDir((base: string) => {
+      const idxPath = path.join(base, 'charts', 'index.yaml');
+      const c100 = HelmChart.from(writeChartYaml(base, 'svc', '1.0.0'));
+      const t100 = writeTgz(base, 'svc', '1.0.0', 'x');
+      HelmIndex.empty()
+        .append(c100, t100, 'https://ex.test/charts')
+        .writeTo(idxPath);
 
-    const raw = fs.readFileSync(idxPath, 'utf8');
-    const parsed = yaml.parse(raw) as { entries: { demo: ChartEntry[] } };
-    expect(parsed.entries.demo.length).toEqual(1);
-  });
+      const c200 = c100.withVersion('2.0.0');
+      const t200 = writeTgz(base, 'svc', '2.0.0', 'y');
+      HelmIndex.fromFile(idxPath)
+        .append(c200, t200, 'https://ex.test/charts')
+        .writeTo(idxPath);
 
-  it('sorting keeps higher semver first', () => {
-    const base = tmpdir();
-    const chartDir = writeChartYaml(base, 'svc', '1.0.0');
-    const chart100 = HelmChart.from(chartDir);
-    const idxPath = path.join(base, 'charts', 'index.yaml');
+      expect(readIndex(idxPath)).toEqual({
+        apiVersion: 'v1',
+        generated: FIXED_ISO,
+        entries: {
+          svc: [
+            {
+              apiVersion: 'v2',
+              name: 'svc',
+              version: '2.0.0',
+              created: FIXED_ISO,
+              digest: sha256OfFile(t200),
+              urls: ['https://ex.test/charts/svc-2.0.0.tgz'],
+              description: 'X',
+            },
+            {
+              apiVersion: 'v2',
+              name: 'svc',
+              version: '1.0.0',
+              created: FIXED_ISO,
+              digest: sha256OfFile(t100),
+              urls: ['https://ex.test/charts/svc-1.0.0.tgz'],
+              description: 'X',
+            },
+          ],
+        },
+      });
+    }),
+  );
 
-    const i0 = HelmIndex.empty();
-    const tgz100 = writeTgz(base, 'svc', '1.0.0', 'x');
-    const i1 = i0.append(chart100, tgz100, 'https://ex.test/charts');
-    i1.writeTo(idxPath);
+  /**
+   * Writes URLs in absolute or relative form based on presence of a base URL.
+   * Ensures relative mode writes only the filename.
+   */
+  it(
+    'writes absolute or relative urls',
+    withTempDir((base: string) => {
+      const idxPath = path.join(base, 'charts', 'index.yaml');
+      const chart = HelmChart.from(writeChartYaml(base, 'web', '3.1.4'));
+      const tgz = writeTgz(base, 'web', '3.1.4', 'content');
 
-    const chart200 = chart100.withVersion('2.0.0');
-    const tgz200 = writeTgz(base, 'svc', '2.0.0', 'y');
-    const i2 = HelmIndex.fromFile(idxPath);
-    const i3 = i2.append(chart200, tgz200, 'https://ex.test/charts');
-    i3.writeTo(idxPath);
+      HelmIndex.fromFile(idxPath).append(chart, tgz, '').writeTo(idxPath);
+      expect(readIndex(idxPath)).toEqual({
+        apiVersion: 'v1',
+        generated: FIXED_ISO,
+        entries: {
+          web: [
+            {
+              apiVersion: 'v2',
+              name: 'web',
+              version: '3.1.4',
+              created: FIXED_ISO,
+              digest: sha256OfFile(tgz),
+              urls: ['web-3.1.4.tgz'],
+              description: 'X',
+            },
+          ],
+        },
+      });
 
-    const raw = fs.readFileSync(idxPath, 'utf8');
-    const parsed = yaml.parse(raw) as { entries: { svc: ChartEntry[] } };
-    expect(parsed.entries.svc.map((e) => e.version)).toEqual([
-      '2.0.0',
-      '1.0.0',
-    ]);
-  });
+      HelmIndex.fromFile(idxPath)
+        .append(
+          chart.withVersion('3.1.5'),
+          writeTgz(base, 'web', '3.1.5', 'c'),
+          'https://repo.test/charts',
+        )
+        .writeTo(idxPath);
+
+      const parsed = readIndex(idxPath);
+      expect(parsed.entries.web[0]).toEqual({
+        apiVersion: 'v2',
+        name: 'web',
+        version: '3.1.5',
+        created: FIXED_ISO,
+        digest: sha256OfFile(
+          path.join(base, 'dist', 'charts', 'web-3.1.5.tgz'),
+        ),
+        urls: ['https://repo.test/charts/web-3.1.5.tgz'],
+        description: 'X',
+      });
+    }),
+  );
+
+  /**
+   * Passes through metadata from Chart.yaml and coerces appVersion to string.
+   * Ensures unknown keys are preserved unchanged.
+   */
+  it(
+    'passes metadata and coerces appVersion',
+    withTempDir((base: string) => {
+      const idxPath = path.join(base, 'charts', 'index.yaml');
+      const chart = HelmChart.from(
+        writeChartYaml(base, 'api', '0.9.0', {
+          appVersion: 42,
+          icon: 'https://i/icon.svg',
+          keywords: ['k1', 'k2'],
+          maintainers: [{ name: 'a', email: 'a@x' }],
+          kubeVersion: '>=1.24.0-0',
+          type: 'application',
+          'x-future': { nested: true },
+        }),
+      );
+      const tgz = writeTgz(base, 'api', '0.9.0', 'z');
+
+      HelmIndex.fromFile(idxPath)
+        .append(chart, tgz, 'https://r.test/c')
+        .writeTo(idxPath);
+
+      expect(readIndex(idxPath)).toEqual({
+        apiVersion: 'v1',
+        generated: FIXED_ISO,
+        entries: {
+          api: [
+            {
+              apiVersion: 'v2',
+              name: 'api',
+              version: '0.9.0',
+              created: FIXED_ISO,
+              digest: sha256OfFile(tgz),
+              urls: ['https://r.test/c/api-0.9.0.tgz'],
+              description: 'X',
+              appVersion: '42',
+              icon: 'https://i/icon.svg',
+              keywords: ['k1', 'k2'],
+              kubeVersion: '>=1.24.0-0',
+              type: 'application',
+              maintainers: [{ name: 'a', email: 'a@x' }],
+              'x-future': { nested: true },
+            } as ChartEntry,
+          ],
+        },
+      });
+    }),
+  );
+
+  /**
+   * Ensures Chart.yaml cannot override reserved fields that are computed at
+   * index time, including urls, digest, and created timestamp.
+   */
+  it(
+    'denylists computed fields from override',
+    withTempDir((base: string) => {
+      const idxPath = path.join(base, 'charts', 'index.yaml');
+      const chart = HelmChart.from(
+        writeChartYaml(base, 'svc', '7.7.7', {
+          urls: ['http://bad/url.tgz'],
+          created: '1999-01-01T00:00:00.000Z',
+          digest: 'deadbeef',
+        }),
+      );
+      const tgz = writeTgz(base, 'svc', '7.7.7', 'payload');
+
+      HelmIndex.fromFile(idxPath)
+        .append(chart, tgz, 'https://good/charts')
+        .writeTo(idxPath);
+
+      expect(readIndex(idxPath)).toEqual({
+        apiVersion: 'v1',
+        generated: FIXED_ISO,
+        entries: {
+          svc: [
+            {
+              apiVersion: 'v2',
+              name: 'svc',
+              version: '7.7.7',
+              created: FIXED_ISO,
+              digest: sha256OfFile(tgz),
+              urls: ['https://good/charts/svc-7.7.7.tgz'],
+              description: 'X',
+            },
+          ],
+        },
+      });
+    }),
+  );
+
+  /**
+   * Writes a stable generated timestamp and preserves apiVersion v1 across a
+   * load → write cycle, ensuring idempotent serialization.
+   */
+  it(
+    'writes generated and stays idempotent',
+    withTempDir((base: string) => {
+      const idxPath = path.join(base, 'charts', 'index.yaml');
+      const chart = HelmChart.from(writeChartYaml(base, 'clock', '1.0.0'));
+      const tgz = writeTgz(base, 'clock', '1.0.0', 't');
+
+      HelmIndex.fromFile(idxPath).append(chart, tgz, '').writeTo(idxPath);
+      const first = readIndex(idxPath);
+
+      HelmIndex.fromFile(idxPath).writeTo(idxPath);
+      const second = readIndex(idxPath);
+
+      expect(first).toEqual({
+        apiVersion: 'v1',
+        generated: FIXED_ISO,
+        entries: {
+          clock: [
+            {
+              apiVersion: 'v2',
+              name: 'clock',
+              version: '1.0.0',
+              created: FIXED_ISO,
+              digest: sha256OfFile(tgz),
+              urls: ['clock-1.0.0.tgz'],
+              description: 'X',
+            },
+          ],
+        },
+      });
+      expect(second).toEqual(first);
+    }),
+  );
 });

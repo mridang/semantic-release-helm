@@ -2,18 +2,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'yaml';
 import { HelmChart, ChartYaml } from '../src/helm-chart.js';
-import { fileURLToPath } from 'url';
+import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { withTempDir } from './utils/tmpdir.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const FIXED_TIME = new Date('2001-01-02T03:04:05.000Z');
 
-function tmpdir(): string {
-  const d = path.join(__dirname, `.tmp-chart-${Date.now()}`);
-  fs.mkdirSync(d, { recursive: true });
-  return d;
-}
-
-function writeChart(dir: string, name: string, version: string): string {
+function writeChart(
+  dir: string,
+  name: string,
+  version: string,
+  extra?: Record<string, unknown>,
+): string {
   const chartDir = path.join(dir, 'charts', name);
   fs.mkdirSync(chartDir, { recursive: true });
   const chartFile = path.join(chartDir, 'Chart.yaml');
@@ -22,50 +21,114 @@ function writeChart(dir: string, name: string, version: string): string {
     name,
     version,
     description: 'X',
+    ...(extra ?? {}),
   } as ChartYaml);
   fs.writeFileSync(chartFile, doc, 'utf8');
   return chartDir;
 }
 
+beforeAll(() => {
+  jest.useFakeTimers();
+  jest.setSystemTime(FIXED_TIME);
+});
+
+afterAll(() => {
+  jest.useRealTimers();
+});
+
 describe('HelmChart', () => {
-  it('loads name and version from Chart.yaml', () => {
-    const base = tmpdir();
-    const chartDir = writeChart(base, 'demo', '1.2.3');
-    const chart = HelmChart.from(chartDir);
-    expect({ name: chart.name(), version: chart.version() }).toEqual({
-      name: 'demo',
-      version: '1.2.3',
-    });
-  });
+  /**
+   * Loads name and version from Chart.yaml to ensure the parser extracts
+   * required core fields correctly and exposes them via accessors.
+   */
+  it(
+    'loads name and version',
+    withTempDir((base: string) => {
+      const chartDir = writeChart(base, 'demo', '1.2.3');
+      const chart = HelmChart.from(chartDir);
+      expect({ name: chart.name(), version: chart.version() }).toEqual({
+        name: 'demo',
+        version: '1.2.3',
+      });
+    }),
+  );
 
-  it('withVersion returns a new immutable instance', () => {
-    const base = tmpdir();
-    const chartDir = writeChart(base, 'demo', '1.0.0');
-    const c1 = HelmChart.from(chartDir);
-    const c2 = c1.withVersion('1.1.0');
-    expect({
-      old: c1.version(),
-      new: c2.version(),
-    }).toEqual({
-      old: '1.0.0',
-      new: '1.1.0',
-    });
-  });
+  /**
+   * Ensures immutability when changing versions. A new instance must be
+   * returned while the original instance remains unchanged.
+   */
+  it(
+    'creates new instance on version change',
+    withTempDir((base: string) => {
+      const c1 = HelmChart.from(writeChart(base, 'demo', '1.0.0'));
+      const c2 = c1.withVersion('1.1.0');
+      expect({ old: c1.version(), newer: c2.version() }).toEqual({
+        old: '1.0.0',
+        newer: '1.1.0',
+      });
+    }),
+  );
 
-  it('saveTo writes YAML out', () => {
-    const base = tmpdir();
-    const chartDir = writeChart(base, 'demo', '0.1.0');
-    const c1 = HelmChart.from(chartDir);
-    const file = path.join(chartDir, 'Chart.yaml');
-    const c2 = c1.withVersion('0.2.0');
-    c2.saveTo(file);
-    const raw = fs.readFileSync(file, 'utf8');
-    const parsed = yaml.parse(raw) as ChartYaml;
-    expect(parsed).toEqual({
-      apiVersion: 'v2',
-      name: 'demo',
-      version: '0.2.0',
-      description: 'X',
-    });
-  });
+  /**
+   * Saves YAML after mutation and preserves unknown keys so that forward
+   * compatibility with future Chart.yaml fields is maintained.
+   */
+  it(
+    'saves YAML and preserves unknown fields',
+    withTempDir((base: string) => {
+      const dir = writeChart(base, 'demo', '0.1.0', {
+        keywords: ['a', 'b'],
+        icon: 'https://x/icon.svg',
+        'x-future': { ok: true },
+      });
+      const file = path.join(dir, 'Chart.yaml');
+      HelmChart.from(dir).withVersion('0.2.0').saveTo(file);
+      expect(yaml.parse(fs.readFileSync(file, 'utf8')) as ChartYaml).toEqual({
+        apiVersion: 'v2',
+        name: 'demo',
+        version: '0.2.0',
+        description: 'X',
+        keywords: ['a', 'b'],
+        icon: 'https://x/icon.svg',
+        'x-future': { ok: true },
+      });
+    }),
+  );
+
+  /**
+   * Emits valid YAML text that round-trips to a structured object containing
+   * the expected core fields without lossy transformations.
+   */
+  it(
+    'emits valid YAML via toYAML',
+    withTempDir((base: string) => {
+      const chart = HelmChart.from(writeChart(base, 'demo', '9.9.9'));
+      expect(yaml.parse(chart.toYAML()) as ChartYaml).toEqual({
+        apiVersion: 'v2',
+        name: 'demo',
+        version: '9.9.9',
+        description: 'X',
+      });
+    }),
+  );
+
+  /**
+   * Returns a shallow copy of the parsed structure. External mutations to the
+   * returned object must not affect the internal state of the instance.
+   */
+  it(
+    'returns shallow copy from raw',
+    withTempDir((base: string) => {
+      const chart = HelmChart.from(writeChart(base, 'demo', '1.0.0', { a: 1 }));
+      const r1 = chart.raw();
+      (r1 as Record<string, unknown>).a = 2;
+      expect(chart.raw()).toEqual({
+        apiVersion: 'v2',
+        name: 'demo',
+        version: '1.0.0',
+        description: 'X',
+        a: 1,
+      });
+    }),
+  );
 });

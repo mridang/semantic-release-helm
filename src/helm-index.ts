@@ -5,256 +5,172 @@ import * as yaml from 'yaml';
 import { HelmChart } from './helm-chart.js';
 
 /**
- * A single entry inside a Helm `index.yaml` for a specific chart
- * version. Fields beyond the common ones are allowed and preserved.
+ * Entry schema for a single chart version inside an index. The type
+ * is intentionally permissive to remain forward compatible with new
+ * Helm metadata. Tests rely on the version field being present.
  */
 export interface ChartEntry {
-  /** Chart schema version for the packaged chart (usually `"v2"`). */
-  apiVersion: string;
-
-  /** Chart name. */
-  name: string;
-
-  /** Chart version (SemVer). */
   version: string;
-
-  /** ISO8601 timestamp when the index entry was created. */
-  created: string;
-
-  /** SHA256 digest of the `.tgz` archive (hex). */
-  digest: string;
-
-  /** HTTP(S) URLs pointing to the `.tgz` archive. */
-  urls: string[];
-
-  /** Additional metadata merged in by callers. */
   [key: string]: unknown;
 }
 
 /**
- * Root document shape for a Helm repository `index.yaml`.
+ * In-memory representation of a Helm repository index document. The
+ * structure mirrors Helm's index.yaml format.
  */
 export interface HelmIndexDoc {
-  /** Repository index schema version. */
   apiVersion: 'v1';
-
-  /**
-   * Mapping of chart name to a list of entries. Consumers expect the
-   * list to be sorted in descending version order (highest first).
-   */
   entries: Record<string, ChartEntry[]>;
-
-  /** Optional generated timestamp (ISO8601). */
   generated?: string;
 }
 
 /**
- * Compute the SHA256 digest of a file and return it as lowercase hex.
+ * Copy all non-reserved Chart.yaml keys into the target entry map.
+ * A small denylist prevents overwriting fields computed by the
+ * index writer. appVersion is coerced to string when scalar.
+ *
+ * @param raw Parsed Chart.yaml map.
+ * @param into Mutable entry map to receive passthrough fields.
  */
-function sha256(file: string): string {
-  const h = crypto.createHash('sha256');
-  const buf = fs.readFileSync(file);
-  h.update(buf);
-  return h.digest('hex');
+function passthroughAllExceptReserved(
+  raw: Record<string, unknown>,
+  into: Record<string, unknown>,
+): void {
+  const reserved = new Set([
+    'name',
+    'version',
+    'apiVersion',
+    'created',
+    'digest',
+    'urls',
+  ]);
+
+  for (const [k, v] of Object.entries(raw)) {
+    if (reserved.has(k)) continue;
+    if (v === undefined) continue;
+
+    if (k === 'appVersion') {
+      if (typeof v === 'string' || typeof v === 'number') {
+        into[k] = String(v);
+        continue;
+      }
+    }
+
+    into[k] = v;
+  }
 }
 
 /**
- * Immutable representation of a Helm repository index. Instances are
- * created with {@link HelmIndex.empty} or {@link HelmIndex.fromFile}.
- * All mutations return *new* instances.
- *
- * ### Merge semantics
- *
- * - {@link append} inserts or replaces a version for a given chart
- *   name, removes any duplicate of that version, and re-sorts the list
- *   descending by SemVer segments (numeric compare, zero-padded).
- * - Unknown charts remain untouched.
- *
- * ### Example: build an index and write to disk
- *
- * ```ts
- * import { HelmIndex } from "./helm-index.js";
- * import { HelmChart } from "./helm-chart.js";
- *
- * const idx = HelmIndex.fromFile("docs/charts/index.yaml");
- * const chart = HelmChart.from("charts/app");
- *
- * const next = idx.append(
- *   chart,
- *   "dist/charts/app-1.2.3.tgz",
- *   "https://example.com/charts",
- *   { description: "App release" }
- * );
- *
- * next.writeTo("docs/charts/index.yaml");
- * ```
+ * A mutable Helm index that can be loaded, merged, and serialized.
+ * Methods return new instances to make merges predictable in tests.
  */
 export class HelmIndex {
-  /** Frozen document that will be serialized to `index.yaml`. */
-  private readonly doc: HelmIndexDoc;
-
-  private constructor(doc: HelmIndexDoc) {
-    const safe: HelmIndexDoc = {
-      apiVersion: 'v1',
-      entries: { ...(doc.entries || {}) },
-      generated: doc.generated,
-    };
-    this.doc = Object.freeze(safe);
-  }
+  private doc: HelmIndexDoc = { apiVersion: 'v1', entries: {} };
 
   /**
-   * Create an empty index.
+   * Return an empty index with no entries.
    */
   static empty(): HelmIndex {
-    return new HelmIndex({ apiVersion: 'v1', entries: {} });
+    const idx = new HelmIndex();
+    idx.doc = { apiVersion: 'v1', entries: {} };
+    return idx;
   }
 
   /**
-   * Load an index from a YAML file. If the file does not exist, or if
-   * the content is invalid, an empty index is returned.
+   * Load an index from disk when present, otherwise create a fresh
+   * empty index. Missing sections are normalized for robustness.
+   *
+   * @param indexPath Path to an index.yaml file.
    */
-  static fromFile(filePath: string): HelmIndex {
-    if (!fs.existsSync(filePath)) {
-      return HelmIndex.empty();
-    }
-    const raw = fs.readFileSync(filePath, 'utf8');
-    const parsed = yaml.parse(raw) as HelmIndexDoc | undefined;
+  static fromFile(indexPath: string): HelmIndex {
+    if (fs.existsSync(indexPath)) {
+      const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as
+        | HelmIndexDoc
+        | undefined;
 
-    if (!parsed || parsed.apiVersion !== 'v1') {
-      return HelmIndex.empty();
+      const idx = new HelmIndex();
+      idx.doc = parsed ?? { apiVersion: 'v1', entries: {} };
+      if (!idx.doc.entries) idx.doc.entries = {};
+      idx.doc.apiVersion = 'v1';
+      return idx;
     }
-    if (!parsed.entries) {
-      return new HelmIndex({ apiVersion: 'v1', entries: {} });
-    }
-    return new HelmIndex(parsed);
+
+    return HelmIndex.empty();
   }
 
   /**
-   * Append (or replace) a chart version and return a new index.
+   * Append a packaged chart to the index. The entry includes fields
+   * computed by this writer and all non-reserved Chart.yaml fields.
+   * Extra fields are merged last. Existing versions are replaced by
+   * version string rather than duplicated.
    *
-   * If an entry for the same `name@version` exists, it is removed and
-   * replaced by the new entry (with updated `created`, `digest`, and
-   * `urls`). The final list for that chart is sorted by version in
-   * descending order using a numeric segment comparison, so that:
-   *
-   * - `10.0.0` > `2.9.9`
-   * - `1.10.0` > `1.2.0`
-   * - `1.0` == `1.0.0` in ordering intent (trailing zeros padded).
-   *
-   * @param chart    The parsed chart metadata (name + version).
-   * @param tgzPath  Path to the packaged `.tgz` archive on disk.
-   * @param baseUrl  Base URL where `.tgz` files are hosted. A single
-   *                 slash is ensured between `baseUrl` and filename.
-   * @param extra    Optional metadata to merge into the entry.
+   * @param chart Parsed chart instance.
+   * @param packagedTgzAbsPath Absolute path to the packaged .tgz.
+   * @param baseUrl Base URL for absolute URLs. When blank, relative
+   *                file names are used instead.
+   * @param extra Optional extra fields to merge into the entry.
    */
   append(
     chart: HelmChart,
-    tgzPath: string,
+    packagedTgzAbsPath: string,
     baseUrl: string,
     extra?: Record<string, unknown>,
   ): HelmIndex {
-    const name = chart.name();
-    const version = chart.version();
-    const digest = sha256(tgzPath);
-    const filename = path.basename(tgzPath);
-    const url = `${baseUrl.replace(/\/$/, '')}/${filename}`;
+    const bytes = fs.readFileSync(packagedTgzAbsPath);
+    const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+    const filename = path.basename(packagedTgzAbsPath);
     const created = new Date().toISOString();
 
-    const nextEntry: ChartEntry = Object.freeze({
-      apiVersion: 'v2',
-      name,
-      version,
+    const urls =
+      typeof baseUrl === 'string' && baseUrl.trim().length > 0
+        ? [`${baseUrl.replace(/\/+$/, '')}/${filename}`]
+        : [filename];
+
+    const entry: ChartEntry = {
+      apiVersion: chart.apiVersion() ?? 'v2',
+      name: chart.name(),
+      version: chart.version() ?? '',
       created,
       digest,
-      urls: [url],
-      ...(extra || {}),
-    });
+      urls,
+    };
 
-    const existingForName: ChartEntry[] = this.doc.entries[name]
-      ? [...this.doc.entries[name]]
+    passthroughAllExceptReserved(chart.raw(), entry);
+
+    if (extra) {
+      for (const [k, v] of Object.entries(extra)) {
+        (entry as Record<string, unknown>)[k] = v;
+      }
+    }
+
+    const next = HelmIndex.empty();
+    next.doc = {
+      apiVersion: 'v1',
+      entries: { ...this.doc.entries },
+      generated: created,
+    };
+
+    const key = chart.name();
+    const existing = Array.isArray(next.doc.entries[key])
+      ? next.doc.entries[key]
       : [];
 
-    // Drop any existing entry for the same version.
-    const filtered: ChartEntry[] = existingForName.filter(
-      (e) => e.version !== version,
+    const filtered = existing.filter(
+      (e) => String(e.version) !== String(entry.version),
     );
 
-    // Add the fresh one and sort descending by dotted numeric segments.
-    const merged: ChartEntry[] = [...filtered, nextEntry];
-    const sorted: ChartEntry[] = [...merged].sort((a, b) => {
-      const as = a.version.split('.').map((n) => Number(n));
-      const bs = b.version.split('.').map((n) => Number(n));
-      for (let i = 0; i < Math.max(as.length, bs.length); i += 1) {
-        const ai = Number.isFinite(as[i]) ? as[i] : 0;
-        const bi = Number.isFinite(bs[i]) ? bs[i] : 0;
-        if (ai !== bi) {
-          return bi - ai;
-        }
-      }
-      return 0;
-    });
-
-    // Rebuild the entries map immutably.
-    const nextEntries: Record<string, ChartEntry[]> = Object.keys(
-      this.doc.entries,
-    ).reduce(
-      (acc, key) => {
-        if (key === name) {
-          return { ...acc, [key]: sorted };
-        }
-        return { ...acc, [key]: [...this.doc.entries[key]] };
-      },
-      {} as Record<string, ChartEntry[]>,
-    );
-
-    if (!this.doc.entries[name]) {
-      return new HelmIndex({
-        apiVersion: 'v1',
-        entries: { ...nextEntries, [name]: sorted },
-        generated: created,
-      });
-    }
-
-    return new HelmIndex({
-      apiVersion: 'v1',
-      entries: nextEntries,
-      generated: created,
-    });
+    next.doc.entries[key] = [entry, ...filtered];
+    return next;
   }
 
   /**
-   * Serialize the current index to YAML.
+   * Serialize the index to YAML at the given path. Parent folders
+   * are created when missing.
    *
-   * ### Example
-   *
-   * ```ts
-   * const idx = HelmIndex.empty();
-   * const yamlText = idx.toYAML();
-   * console.log(yamlText);
-   * ```
+   * @param indexPath Destination path for the index.yaml file.
    */
-  toYAML(): string {
-    return yaml.stringify(this.doc);
-  }
-
-  /**
-   * Write the current index to a file, creating parent directories if
-   * necessary.
-   *
-   * @param filePath Destination path (e.g., `docs/charts/index.yaml`).
-   *
-   * ### Example
-   *
-   * ```ts
-   * const idx = HelmIndex.empty();
-   * idx.writeTo("docs/charts/index.yaml");
-   * ```
-   */
-  writeTo(filePath: string): void {
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, this.toYAML(), 'utf8');
+  writeTo(indexPath: string): void {
+    fs.mkdirSync(path.dirname(indexPath), { recursive: true });
+    fs.writeFileSync(indexPath, yaml.stringify(this.doc), 'utf8');
   }
 }

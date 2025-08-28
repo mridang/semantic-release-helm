@@ -3,183 +3,125 @@ import * as path from 'path';
 import * as yaml from 'yaml';
 
 /**
- * Shape of a Helm `Chart.yaml` file.
- *
- * The interface captures the most common keys used by Helm charts.
- * Unknown keys are not stripped during read/write; this library only
- * reads a file, mutates specific fields in-memory immutably, and then
- * serializes the full document back to YAML.
+ * Schema for Chart.yaml used by tests and serialization. Additional
+ * keys are permitted and preserved. Only a minimal subset is typed
+ * explicitly to avoid needless churn when Helm adds new fields.
  */
 export interface ChartYaml {
-  /**
-   * The chart definition schema version. For modern application charts
-   * this is typically `"v2"`.
-   */
-  apiVersion: string;
-
-  /** The chart name. */
+  apiVersion?: string;
   name: string;
-
-  /** The chart version (SemVer expected by Helm). */
-  version: string;
-
-  /** Optional application version (free-form; often SemVer). */
-  appVersion?: string;
-
-  /** Optional human-readable description. */
-  description?: string;
-
-  /** Optional chart type (e.g., `"application"`). */
-  type?: string;
-
-  /** Optional icon URL shown by some UIs. */
-  icon?: string;
-
-  /** Optional Kubernetes version constraint. */
-  kubeVersion?: string;
-
-  /** Optional chart maintainers list. */
-  maintainers?: Array<{
-    /** Maintainer display name. */
-    name: string;
-    /** Optional email address. */
-    email?: string;
-    /** Optional home page URL. */
-    url?: string;
-  }>;
+  version?: string;
+  [key: string]: unknown;
 }
 
 /**
- * Immutable representation of a Helm chart. Instances are created via
- * {@link HelmChart.from}. All mutator-like operations return *new*
- * instances; the original object remains unchanged.
- *
- * ### Invariants
- *
- * - The instance always has a valid `name` and `version`.
- * - The YAML structure round-trips: fields not edited are preserved.
- *
- * ### Example
- *
- * ```ts
- * import { HelmChart } from "./helm-chart.js";
- *
- * const chart = HelmChart.from("charts/app");
- * const bumped = chart.withVersion("1.2.3");
- * bumped.saveTo();                    // overwrite Chart.yaml in-place
- * bumped.saveTo("/tmp/Chart.yaml");   // or write to a different path
- *
- * console.log(chart.version());       // old version
- * console.log(bumped.version());      // "1.2.3"
- * ```
+ * Minimal chart metadata required by the plugin and tests. The full
+ * parsed Chart.yaml is retained as a raw map for round-tripping and
+ * passthrough into index entries.
  */
 export class HelmChart {
-  /** Absolute or relative path to the chart directory. */
-  private readonly chartDir: string;
-
-  /** Parsed and frozen contents of `Chart.yaml`. */
-  private readonly chart: ChartYaml;
-
-  private constructor(chartDir: string, chart: ChartYaml) {
-    this.chartDir = chartDir;
-    this.chart = Object.freeze({ ...chart });
-  }
+  private readonly data: ChartYaml;
 
   /**
-   * Load a chart from a directory containing `Chart.yaml`.
+   * Load Chart.yaml from a chart directory and normalize well-known
+   * fields. Unknown keys are preserved verbatim for later writes.
    *
-   * @throws Error if the file is missing or does not contain the
-   *         required `name` and `version` fields.
+   * @param chartDir Path to the directory that contains Chart.yaml.
    */
   static from(chartDir: string): HelmChart {
-    const chartFile = path.join(chartDir, 'Chart.yaml');
-    const raw = fs.readFileSync(chartFile, 'utf8');
-    const parsed = yaml.parse(raw) as ChartYaml;
+    const chartYamlPath = path.join(chartDir, 'Chart.yaml');
+    const rawText = fs.readFileSync(chartYamlPath, 'utf8');
+    const parsed = (yaml.parse(rawText) ?? {}) as ChartYaml;
 
-    if (
-      typeof parsed?.name !== 'string' ||
-      typeof parsed?.version !== 'string'
-    ) {
-      throw new Error('Invalid Chart.yaml');
+    const normalized: ChartYaml = { ...parsed };
+    if (typeof normalized.name !== 'string') {
+      normalized.name = String(normalized.name ?? '');
+    }
+    if (normalized.version !== undefined) {
+      normalized.version = String(normalized.version);
+    }
+    if (normalized.apiVersion !== undefined) {
+      normalized.apiVersion = String(normalized.apiVersion);
     }
 
-    return new HelmChart(chartDir, parsed);
-  }
-
-  /** The chart name (immutable). */
-  name(): string {
-    return this.chart.name;
-  }
-
-  /** The chart version (immutable). */
-  version(): string {
-    return this.chart.version;
+    return new HelmChart(normalized);
   }
 
   /**
-   * Return a new chart with an updated `version`.
+   * Create a chart from a parsed Chart.yaml object. Callers should
+   * prefer the factory unless constructing for tests.
    *
-   * @param version Non-empty string (SemVer recommended).
-   * @throws Error if `version` is falsy.
+   * @param data Parsed Chart.yaml as a mutable object.
+   */
+  constructor(data: ChartYaml) {
+    this.data = { ...data };
+  }
+
+  /**
+   * Return the chart name as a string. The value is sourced from
+   * Chart.yaml and normalized during construction.
+   */
+  name(): string {
+    return String(this.data.name ?? '');
+  }
+
+  /**
+   * Return the chart version as a string, or undefined when Chart.
+   * yaml did not define one.
+   */
+  version(): string | undefined {
+    return this.data.version === undefined
+      ? undefined
+      : String(this.data.version);
+  }
+
+  /**
+   * Return the chart API version as a string, or undefined when the
+   * field is not present.
+   */
+  apiVersion(): string | undefined {
+    return this.data.apiVersion === undefined
+      ? undefined
+      : String(this.data.apiVersion);
+  }
+
+  /**
+   * Produce a new HelmChart with the version field replaced by the
+   * provided value. The instance is immutable; the original object
+   * remains unchanged.
+   *
+   * @param version New semantic version to set on the chart.
    */
   withVersion(version: string): HelmChart {
-    if (!version) {
-      throw new Error('Version must be non-empty');
-    }
-    const next: ChartYaml = { ...this.chart, version };
-    return new HelmChart(this.chartDir, next);
+    const next: ChartYaml = { ...this.data, version };
+    return new HelmChart(next);
   }
 
-  // noinspection JSUnusedGlobalSymbols
   /**
-   * Return a new chart with an updated `appVersion`.
+   * Serialize the current chart to YAML and write the result to the
+   * given file path. All unknown fields are preserved verbatim.
    *
-   * @param appVersion Non-empty string.
-   * @throws Error if `appVersion` is falsy.
+   * @param filePath Destination path for the Chart.yaml file.
    */
-  withAppVersion(appVersion: string): HelmChart {
-    if (!appVersion) {
-      throw new Error('appVersion must be non-empty');
-    }
-    const next: ChartYaml = { ...this.chart, appVersion };
-    return new HelmChart(this.chartDir, next);
+  saveTo(filePath: string): void {
+    const text = yaml.stringify(this.data);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, text, 'utf8');
   }
 
   /**
-   * Serialize the current chart to YAML. Unknown keys (present in the
-   * original file) are preserved.
+   * Return a shallow copy of the raw parsed Chart.yaml object for
+   * callers that need to pass through metadata into other files.
+   */
+  raw(): Record<string, unknown> {
+    return { ...this.data };
+  }
+
+  /**
+   * Serialize the chart to a YAML string suitable for inspection or
+   * custom persistence in tests and utilities.
    */
   toYAML(): string {
-    return yaml.stringify(this.chart);
-  }
-
-  /**
-   * Absolute path to the `Chart.yaml` within this chart directory.
-   */
-  chartFilePath(): string {
-    return path.join(this.chartDir, 'Chart.yaml');
-  }
-
-  /**
-   * Write the current chart to disk.
-   *
-   * @param filePath Optional explicit path. If omitted, writes to the
-   *                 `Chart.yaml` within the original chart directory.
-   *
-   * ### Example
-   *
-   * ```ts
-   * const chart = HelmChart.from("charts/app").withVersion("1.2.3");
-   * chart.saveTo(); // overwrite in-place
-   * chart.saveTo("/tmp/Chart.yaml"); // alternate location
-   * ```
-   */
-  saveTo(filePath?: string): void {
-    const out = filePath ? filePath : this.chartFilePath();
-    const parent = path.dirname(out);
-    if (!fs.existsSync(parent)) {
-      fs.mkdirSync(parent, { recursive: true });
-    }
-    fs.writeFileSync(out, this.toYAML(), 'utf8');
+    return yaml.stringify(this.data);
   }
 }
