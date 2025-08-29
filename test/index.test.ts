@@ -16,17 +16,13 @@ import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
 import * as yaml from 'yaml';
 
 // noinspection ES6PreferShortImport
-import {
-  verifyConditions,
-  prepare,
-  publish,
-  type HelmPluginConfig,
-} from '../src/index.js';
+import { verifyConditions, prepare, publish } from '../src/index.js';
 import type {
   VerifyConditionsContext,
   PrepareContext,
   PublishContext,
 } from 'semantic-release';
+import { HelmPluginConfig } from '../src/plugin-config.js';
 
 const HELM_IMAGE = process.env.HELM_IMAGE ?? 'alpine/helm:3.15.2';
 const DOCS_IMAGE = process.env.DOCS_IMAGE ?? 'jnorwood/helm-docs:v1.14.2';

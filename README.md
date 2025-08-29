@@ -2,17 +2,17 @@
 
 A [semantic-release](https://github.com/semantic-release/semantic-release)
 plugin to automatically package and publish Helm charts to an
-OCI-compliant registry.
+OCI-compliant registry or publish them to GitHub Pages.
 
 This plugin automates the final step of a Helm chart release workflow.
 It updates the `version` in your `Chart.yaml` file, validates and templates
 your chart, regenerates the chart `README.md` via `helm-docs`, packages the
 chart into a `.tgz`, and after `semantic-release` publishes a new Git tag,
-it pushes the packaged chart to your configured OCI registry. This eliminates
-the need for manual commands or scripts, ensuring your Helm charts are always
-up-to-date and published consistently.
+it pushes the packaged chart either to your configured OCI registry or to
+GitHub Pages. This eliminates the need for manual commands or scripts, ensuring
+your Helm charts are always up-to-date and published consistently.
 
-### Why?
+## Why?
 
 Automating the release of a Helm chart involves more than just creating a Git tag.
 For a new version to be consumable, it must be validated, packaged, and pushed
@@ -26,8 +26,8 @@ Without this plugin, developers typically face one of two issues:
   creates opportunities for mistakes or skipped steps.
 - **Incomplete Automation:** Other existing plugins may bump the version in
   `Chart.yaml`, but they often stop there. They do not handle linting,
-  templating, regenerating docs, or pushing to OCI. This leaves a manual
-  gap in the release process.
+  templating, regenerating docs, or pushing to OCI/GitHub Pages. This leaves
+  a manual gap in the release process.
 - **Missing Validation:** Many pipelines skip running `helm lint` and
   `helm template`, which can allow broken charts to be released. This
   results in consumers discovering issues after the release, rather than
@@ -37,8 +37,7 @@ This plugin provides a lightweight and direct solution by running Helm and
 helm-docs inside Docker. Instead of relying on ad-hoc scripts, it ensures
 that after `semantic-release` successfully creates a new release, your Helm
 chart is linted, templated, documented, packaged, and immediately published
-to your OCI registry. This creates a seamless, end-to-end automated pipeline
-directly within your `semantic-release` configuration.
+to your target registry.
 
 ## Installation
 
@@ -70,7 +69,7 @@ included in the release commit, the plugin should be placed **before**
 module.exports = {
   branches: ['main', 'next'],
   plugins: [
-    '@semantic-release/commit-analyzer', // Must come first to determine release type
+    '@semantic-release/commit-analyzer',
     [
       '@mridang/semantic-release-helm',
       {
@@ -79,6 +78,10 @@ module.exports = {
         ociUsername: process.env.OCI_USERNAME,
         ociPassword: process.env.OCI_PASSWORD,
         ociInsecure: false,
+        helmImage: 'alpine/helm:3.15.2',
+        docsImage: 'jnorwood/helm-docs:v1.14.2',
+        docsArgs: ['--template-files', 'README.md'],
+        githubPages: true,
       },
     ],
     '@semantic-release/release-notes-generator',
@@ -102,16 +105,59 @@ module.exports = {
 
 ### Configuration Options
 
-| Option        | Type       | Required | Description                                                                       |
-| ------------- | ---------- | -------- | --------------------------------------------------------------------------------- |
-| `chartPath`   | `string`   | Yes      | Path to the chart directory containing `Chart.yaml`.                              |
-| `ociRepo`     | `string`   | No       | The target OCI repository (e.g., `oci://ghcr.io/my-org/charts`).                  |
-| `ociInsecure` | `boolean`  | No       | If `true`, allows pushing to HTTP registries. Default: `false`.                   |
-| `ociUsername` | `string`   | No       | Username for authenticating with the OCI registry.                                |
-| `ociPassword` | `string`   | No       | Password or token for authenticating with the OCI registry.                       |
-| `helmImage`   | `string`   | No       | Custom Docker image for running Helm. Default: `alpine/helm:3.15.2`.              |
-| `docsImage`   | `string`   | No       | Custom Docker image for running helm-docs. Default: `jnorwood/helm-docs:v1.14.2`. |
-| `docsArgs`    | `string[]` | No       | Additional arguments for helm-docs. Default: `['--template-files', 'README.md']`. |
+All options are case-sensitive and lowercased in the JSON configuration.
+
+- **`chartPath` (string, required):**
+  Path to the chart directory containing `Chart.yaml`.
+
+- **`ociRepo` (string, optional):**
+  The target OCI repository (e.g., `oci://ghcr.io/my-org/charts`).
+  When configured, the packaged chart will be pushed to this repository.
+
+- **`ociUsername` (string, optional):**
+  Username for authenticating with the OCI registry. If not provided,
+  anonymous push will be attempted (not recommended).
+
+- **`ociPassword` (string, optional):**
+  Password or token for authenticating with the OCI registry.
+
+- **`ociInsecure` (boolean, optional):**
+  If `true`, allows pushing to insecure HTTP registries. Default: `false`.
+
+- **`helmImage` (string, optional):**
+  Custom Docker image for running Helm commands. Default:
+  `alpine/helm:3.15.2`.
+
+- **`docsImage` (string, optional):**
+  Custom Docker image for running helm-docs. Default:
+  `jnorwood/helm-docs:v1.14.2`.
+
+- **`docsArgs` (array of strings, optional):**
+  Additional arguments for helm-docs. Default:
+  `['--template-files', 'README.md']`.
+
+- **`githubPages` (boolean, optional):**
+  If `true`, the packaged chart will also be pushed to the `gh-pages` branch
+  of the repository, making it available as a Helm chart repo over GitHub Pages.
+
+## OCI Registry Publishing
+
+When you provide `ociRepo`, the plugin will package your chart into a `.tgz`
+and execute `helm push` to the specified OCI-compliant registry. Credentials
+are taken from `ociUsername` and `ociPassword`. This enables direct integration
+with container registries such as GitHub Container Registry (`ghcr.io`),
+Amazon ECR, or Docker Hub (if they support OCI artifacts).
+
+## GitHub Pages Publishing
+
+If `githubPages` is enabled, the plugin will push the packaged chart to the
+`gh-pages` branch of the repository. This is useful if you want to host
+your Helm charts via GitHub Pages as a traditional Helm chart repository.
+Consumers can then add your repo with:
+
+```sh
+helm repo add my-org https://my-org.github.io/my-repo/
+```
 
 ## Known Issues
 
@@ -119,12 +165,8 @@ module.exports = {
 
 ## Useful links
 
-- **[Semantic Release](https://github.com/semantic-release/semantic-release):**
-  The core automated version management and package publishing tool.
-- **[Helm](https://helm.sh/):**
-  The Kubernetes package manager.
-- **[helm-docs](https://github.com/norwoodj/helm-docs):**
-  Tool for automatically generating chart documentation.
+- **[Helm](https://helm.sh/):** The Kubernetes package manager.
+- **[helm-docs](https://github.com/norwoodj/helm-docs):** Tool for automatically generating chart documentation.
 
 ## Contributing
 

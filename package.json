@@ -29,7 +29,7 @@
     "dist"
   ],
   "license": "Apache-2.0",
-  "description": "Semantic Release plugin that prevents major releases unless a corresponding tag exists on a specific branch in an upstream GitHub repository.",
+  "description": "Semantic Release plugin that lints, templates, regenerates docs, packages Helm charts, and pushes them to an OCI registry",
   "private": false,
   "engines": {
     "node": ">=20.0.0"

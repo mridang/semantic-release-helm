@@ -1,144 +1,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
 // @ts-expect-error semantic-release types are not bundled
-import { Context, PluginConfig } from 'semantic-release';
+import { Context } from 'semantic-release';
 // @ts-expect-error semantic-release types are not bundled
 import SemanticReleaseError from '@semantic-release/error';
-import { execSync } from 'node:child_process';
 import * as yaml from 'yaml';
 import { HelmIndex } from './helm-index.js';
 import { HelmChart } from './helm-chart.js';
-
-export interface HelmPluginConfig extends PluginConfig {
-  /**
-   * Path to the chart directory that contains Chart.yaml.
-   * Example: "charts/app"
-   */
-  chartPath: string;
-
-  /**
-   * OCI repository to push charts to, e.g. "oci://registry.example.com/charts".
-   * If omitted, OCI publish is skipped.
-   */
-  ociRepo?: string;
-
-  /**
-   * If true, use plain HTTP / insecure registry behavior for OCI.
-   */
-  ociInsecure?: boolean;
-
-  /**
-   * OCI username (falls back to env OCI_USERNAME).
-   */
-  ociUsername?: string;
-
-  /**
-   * OCI password (falls back to env OCI_PASSWORD).
-   */
-  ociPassword?: string;
-
-  /**
-   * Extra args for helm-docs, default ["--template-files=README.md"].
-   */
-  docsArgs?: string[];
-
-  /**
-   * Docker image for Helm CLI, default "alpine/helm:3.15.2".
-   */
-  helmImage?: string;
-
-  /**
-   * Docker image for helm-docs, default "jnorwood/helm-docs:v1.14.2".
-   */
-  docsImage?: string;
-
-  /**
-   * GitHub Pages configuration. Enabled by default.
-   */
-  ghPages?: {
-    /**
-     * Enable/disable gh-pages publish. Default: true.
-     */
-    enabled?: boolean;
-    /**
-     * Base URL for the chart repository. If provided, absolute URLs are written
-     * into index.yaml. If omitted, relative URLs (file names) are written.
-     * Example: "https://example.test/charts"
-     */
-    url?: string;
-    /**
-     * Remote name to push to (default "origin").
-     */
-    repo?: string;
-    /**
-     * Branch name (default "gh-pages").
-     */
-    branch?: string;
-    /**
-     * Subdirectory inside the gh-pages worktree where charts live (default
-     * "charts").
-     */
-    dir?: string;
-  };
-}
+import { DockerCliClient } from './docker/cli-client.js';
+import { DockerImage } from './docker/image.js';
+import { runHostCmd } from './command-runner.js';
+import { HelmPluginConfig, HelmConfig } from './plugin-config.js';
 
 export interface ChartYaml {
   name: string;
   version?: string;
   [key: string]: string | number | boolean | object | undefined;
-}
-
-/**
- * Execute a host command and return its trimmed stdout. All interactions are
- * logged to the provided semantic-release logger. If the command produces no
- * stdout, "(no output)" is logged for traceability.
- *
- * On failure, the function:
- * - logs the failing command,
- * - attempts to log captured stdout and stderr from the thrown error object,
- * - rethrows the original error to preserve the exit semantics.
- *
- * The command is executed with stdio "pipe" and UTF-8 decoding so that stdout
- * can be captured and returned to callers. The working directory is set to the
- * repository root (semantic-release's `cwd`).
- *
- * @param cmd Shell command to execute.
- * @param cwd Working directory for the command.
- * @param logger semantic-release logger used for structured logs.
- * @returns Trimmed stdout of the command.
- * @throws Any error thrown by `execSync` is rethrown after being logged.
- */
-function runHostCmd(
-  cmd: string,
-  cwd: string,
-  logger: Context['logger'],
-): string {
-  logger.log(`$ ${cmd}`);
-  try {
-    const out: string = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf8' });
-    const trimmed = out.trim();
-    logger.log(trimmed.length ? trimmed : '(no output)');
-    return trimmed;
-  } catch (err: unknown) {
-    logger.error(`Command failed: ${cmd}`);
-    if (typeof err === 'object' && err !== null) {
-      const e = err as {
-        stdout?: string | Buffer;
-        stderr?: string | Buffer;
-        message?: string;
-      };
-      const out = Buffer.isBuffer(e.stdout)
-        ? e.stdout.toString('utf8')
-        : String(e.stdout ?? '');
-      const errOut = Buffer.isBuffer(e.stderr)
-        ? e.stderr.toString('utf8')
-        : String(e.stderr ?? '');
-      if (out.trim()) logger.error(out.trim());
-      if (errOut.trim()) logger.error(errOut.trim());
-      if (e.message) logger.error(e.message);
-    }
-    throw err;
-  }
 }
 
 /**
@@ -155,22 +32,14 @@ function runHostCmd(
  * @param cwd Host working directory, mounted to `/apps` in the container.
  * @param logger semantic-release logger used for structured logs.
  */
-function runDockerCmd(
+async function runDockerCmd(
   image: string,
   args: string[],
   cwd: string,
   logger: Context['logger'],
-): void {
-  const full = [
-    'docker run',
-    '--rm',
-    '--add-host=host.docker.internal:host-gateway',
-    `--volume=${cwd}:/apps`,
-    '--workdir=/apps',
-    image,
-    ...args,
-  ].join(' ');
-  void runHostCmd(full, cwd, logger);
+): Promise<void> {
+  const img = new DockerImage(image, cwd, logger, new DockerCliClient());
+  await img.run(args);
 }
 
 /**
@@ -186,24 +55,14 @@ function runDockerCmd(
  * @param cwd Host working directory, mounted to `/apps` in the container.
  * @param logger semantic-release logger used for structured logs.
  */
-function runDockerShell(
+async function runDockerShell(
   image: string,
   script: string,
   cwd: string,
   logger: Context['logger'],
-): void {
-  const full = [
-    'docker run',
-    '--rm',
-    '--add-host=host.docker.internal:host-gateway',
-    `--volume=${cwd}:/apps`,
-    '--workdir=/apps',
-    '--entrypoint=/bin/sh',
-    image,
-    '-lc',
-    JSON.stringify(script),
-  ].join(' ');
-  void runHostCmd(full, cwd, logger);
+): Promise<void> {
+  const img = new DockerImage(image, cwd, logger, new DockerCliClient());
+  await img.shell(script);
 }
 
 /**
@@ -215,14 +74,17 @@ function runDockerShell(
  * @param logger semantic-release logger used for structured logs.
  * @throws SemanticReleaseError if the image cannot be pulled.
  */
-function verifyDockerImage(image: string, logger: Context['logger']): void {
-  const cmd = `docker pull ${image}`;
-  logger.log(`$ ${cmd}`);
+async function verifyDockerImage(
+  image: string,
+  logger: Context['logger'],
+): Promise<void> {
+  const client = new DockerCliClient();
   try {
-    const out: string = execSync(cmd, { stdio: 'pipe', encoding: 'utf8' });
-    const trimmed = out.trim();
-    logger.log(trimmed.length ? trimmed : '(no output)');
+    await client.pull(image, logger);
   } catch (err: unknown) {
+    if (err instanceof SemanticReleaseError) {
+      throw err;
+    }
     throw new SemanticReleaseError(
       `Failed to pull Docker image: ${image}`,
       'EIMAGEPULLFAILED',
@@ -247,38 +109,6 @@ function setChartVersion(rawYaml: string, version: string): string {
 }
 
 /**
- * From an `oci://` URL, extract the `host[:port]` component. This is used to
- * prepare login and insecure-registry configuration for Helm Registry v2.
- *
- * @param ociRepo Repository URL, e.g. `oci://ghcr.io/org/charts`.
- * @returns Host, possibly with an explicit port.
- */
-function extractHostPortFromOci(ociRepo: string): string {
-  const trimmed = ociRepo.replace(/^oci:\/\//, '');
-  const i = trimmed.indexOf('/');
-  return i === -1 ? trimmed : trimmed.slice(0, i);
-}
-
-/**
- * Resolve OCI credentials from plugin config or environment. When present,
- * boolean flags indicate whether a username or password was supplied so that
- * callers can validate completeness before attempting a login.
- *
- * @param cfg Helm plugin configuration.
- * @returns Resolved username/password and presence flags.
- */
-function resolveCreds(cfg: HelmPluginConfig): {
-  username?: string;
-  password?: string;
-  haveUser: boolean;
-  havePass: boolean;
-} {
-  const username = cfg.ociUsername ?? process.env.OCI_USERNAME;
-  const password = cfg.ociPassword ?? process.env.OCI_PASSWORD;
-  return { username, password, haveUser: !!username, havePass: !!password };
-}
-
-/**
  * semantic-release `verifyConditions` step. Verifies that:
  * - Docker is available,
  * - required Docker images can be pulled,
@@ -298,6 +128,8 @@ export async function verifyConditions(
   context: Context,
 ): Promise<void> {
   const { logger, cwd } = context;
+  const cfg = new HelmConfig(pluginConfig);
+
   logger.log('verifyConditions: starting');
 
   try {
@@ -310,40 +142,38 @@ export async function verifyConditions(
     );
   }
 
-  const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
-  const docsImage = pluginConfig.docsImage ?? 'jnorwood/helm-docs:v1.14.2';
+  const helmImage = cfg.getHelmImage();
+  const docsImage = cfg.getDocsImage();
   logger.log(
     `verifyConditions: helmImage="${helmImage}", docsImage="${docsImage}"`,
   );
-  verifyDockerImage(helmImage, logger);
-  verifyDockerImage(docsImage, logger);
+  await verifyDockerImage(helmImage, logger);
+  await verifyDockerImage(docsImage, logger);
 
-  const chartYamlPath = `${cwd}/${pluginConfig.chartPath}/Chart.yaml`;
+  const chartYamlPath = `${cwd}/${cfg.getChartPath()}/Chart.yaml`;
   if (!fs.existsSync(chartYamlPath)) {
     throw new SemanticReleaseError(
       'Chart.yaml not found.',
       'EMISSINGCHARTYAML',
-      `No Chart.yaml found in ${pluginConfig.chartPath}.`,
+      `No Chart.yaml found in ${cfg.getChartPath()}.`,
     );
   }
   logger.log(`verifyConditions: found chart at ${chartYamlPath}`);
 
-  const ghEnabled = pluginConfig.ghPages?.enabled !== false;
-  if (ghEnabled) {
-    const url = pluginConfig.ghPages?.url;
+  if (cfg.isGhEnabled()) {
+    const url = cfg.getGhUrl();
     logger.log(
-      `verifyConditions: GH Pages mode (default). Resolved URL: ${
-        url ?? '(none; index will be written without --url)'
-      }`,
+      `verifyConditions: GH Pages mode (default). Resolved URL: ` +
+        `${url ?? '(none; index will be written without --url)'}`,
     );
   }
 
-  const ociRepo = pluginConfig.ociRepo;
-  if (ociRepo) {
-    const { haveUser, havePass } = resolveCreds(pluginConfig);
+  if (cfg.isOciEnabled()) {
+    const haveUser = cfg.hasOciUser();
+    const havePass = cfg.hasOciPass();
     logger.log(
-      `verifyConditions: OCI enabled -> repo="${ociRepo}", ` +
-        `insecure=${pluginConfig.ociInsecure === true}, ` +
+      `verifyConditions: OCI enabled -> repo="${cfg.getOciRepo()}", ` +
+        `insecure=${cfg.getOciInsecure()}, ` +
         `usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
     if ((haveUser && !havePass) || (!haveUser && havePass)) {
@@ -379,6 +209,8 @@ export async function prepare(
   context: Context,
 ): Promise<void> {
   const { cwd, nextRelease, logger } = context;
+  const cfg = new HelmConfig(pluginConfig);
+
   logger.log('prepare: starting');
 
   const version = nextRelease?.version;
@@ -390,12 +222,12 @@ export async function prepare(
     );
   }
 
-  const chartYamlPath = `${cwd}/${pluginConfig.chartPath}/Chart.yaml`;
+  const chartYamlPath = `${cwd}/${cfg.getChartPath()}/Chart.yaml`;
   if (!fs.existsSync(chartYamlPath)) {
     throw new SemanticReleaseError(
       'Chart.yaml missing during prepare.',
       'EMISSINGCHARTYAML',
-      `Expected Chart.yaml in ${pluginConfig.chartPath}.`,
+      `Expected Chart.yaml in ${cfg.getChartPath()}.`,
     );
   }
 
@@ -404,25 +236,21 @@ export async function prepare(
   fs.writeFileSync(chartYamlPath, updatedYaml, 'utf8');
   logger.log(`prepare: updated Chart.yaml to version ${version}`);
 
-  const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
-  void runDockerCmd(helmImage, ['lint', pluginConfig.chartPath], cwd, logger);
-  void runDockerCmd(
+  const helmImage = cfg.getHelmImage();
+  await runDockerCmd(helmImage, ['lint', cfg.getChartPath()], cwd, logger);
+  await runDockerCmd(
     helmImage,
-    ['template', 'sr-check', pluginConfig.chartPath],
+    ['template', 'sr-check', cfg.getChartPath()],
     cwd,
     logger,
   );
 
-  const docsImage = pluginConfig.docsImage ?? 'jnorwood/helm-docs:v1.14.2';
-  const docsArgs = pluginConfig.docsArgs ?? ['--template-files=README.md'];
+  const docsImage = cfg.getDocsImage();
+  const docsArgs = cfg.getDocsArgs();
   try {
-    runDockerCmd(
+    await runDockerCmd(
       docsImage,
-      [
-        'helm-docs',
-        `--chart-search-root=${pluginConfig.chartPath}`,
-        ...docsArgs,
-      ],
+      ['helm-docs', `--chart-search-root=${cfg.getChartPath()}`, ...docsArgs],
       cwd,
       logger,
     );
@@ -437,9 +265,9 @@ export async function prepare(
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
   }
-  void runDockerCmd(
+  await runDockerCmd(
     helmImage,
-    ['package', pluginConfig.chartPath, '--destination=dist/charts'],
+    ['package', cfg.getChartPath(), '--destination=dist/charts'],
     cwd,
     logger,
   );
@@ -481,6 +309,8 @@ export async function publish(
   context: Context,
 ): Promise<void> {
   const { cwd, logger } = context;
+  const cfg = new HelmConfig(pluginConfig);
+
   logger.log('publish: starting');
 
   const pkgDir = `${cwd}/dist/charts`;
@@ -500,29 +330,31 @@ export async function publish(
   }
   logger.log(`publish: found ${files.length} packaged chart(s)`);
 
-  if (pluginConfig.ociRepo) {
-    const helmImage = pluginConfig.helmImage ?? 'alpine/helm:3.15.2';
-    const hostPort = extractHostPortFromOci(pluginConfig.ociRepo);
-    const plainHttpFlag = pluginConfig.ociInsecure ? ' --plain-http' : '';
-    const insecureLoginFlag = pluginConfig.ociInsecure ? ' --insecure' : '';
-    const { username, password, haveUser, havePass } =
-      resolveCreds(pluginConfig);
+  if (cfg.isOciEnabled()) {
+    const helmImage = cfg.getHelmImage();
+    const hostPort = cfg.getOciHostPort();
+    const plainHttpFlag = cfg.getOciPlainHttpFlag();
+    const insecureLoginFlag = cfg.getOciInsecureLoginFlag();
+    const username = cfg.getOciUsername();
+    const password = cfg.getOciPassword();
+    const haveUser = cfg.hasOciUser();
+    const havePass = cfg.hasOciPass();
 
     logger.log(
-      `publish: OCI mode -> repo="${pluginConfig.ociRepo}", ` +
-        `insecure=${pluginConfig.ociInsecure === true}, ` +
+      `publish: OCI mode -> repo="${cfg.getOciRepo()}", ` +
+        `insecure=${cfg.getOciInsecure()}, ` +
         `usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
 
     const steps: string[] = [];
-    if (pluginConfig.ociInsecure) {
+    if (cfg.getOciInsecure() && hostPort) {
       const cfgJson = `{"auths":{"${hostPort}":{"insecure":true}}}`;
       steps.push(
         'mkdir -p /root/.config/helm/registry',
         `printf %s '${cfgJson}' > /root/.config/helm/registry/config.json`,
       );
     }
-    if (haveUser && havePass) {
+    if (haveUser && havePass && hostPort) {
       steps.push(
         `helm registry login${insecureLoginFlag} ` +
           `--username=${username} --password=${password} ${hostPort}`,
@@ -530,24 +362,22 @@ export async function publish(
     }
 
     for (const tgz of files) {
-      steps.push(`helm push ${tgz} ${pluginConfig.ociRepo}${plainHttpFlag}`);
+      steps.push(`helm push ${tgz} ${cfg.getOciRepo()}${plainHttpFlag}`);
     }
 
     const script = steps.join(' && ');
-    runDockerShell(helmImage, script, cwd, logger);
+    await runDockerShell(helmImage, script, cwd, logger);
 
     logger.log(
-      `{ "helm": { "pushed": ${files.length}, "repo": "${pluginConfig.ociRepo}" } }`,
+      `{ "helm": { "pushed": ${files.length}, "repo": "${cfg.getOciRepo()}" } }`,
     );
   }
 
-  const ghEnabled = pluginConfig.ghPages?.enabled !== false;
-  if (ghEnabled) {
-    const ghCfg = pluginConfig.ghPages ?? {};
-    const ghBranch = ghCfg.branch ?? 'gh-pages';
-    const ghRepo = ghCfg.repo ?? 'origin';
-    const ghDir = ghCfg.dir ?? 'charts';
-    const baseUrl = ghCfg.url;
+  if (cfg.isGhEnabled()) {
+    const ghBranch = cfg.getGhBranch();
+    const ghRepo = cfg.getGhRepo();
+    const ghDir = cfg.getGhDir();
+    const baseUrl = cfg.getGhUrl();
 
     const tmpWorktree = path.join(cwd, '.gh-pages-tmp');
     const srcDir = path.join(cwd, 'dist', 'charts');
@@ -574,7 +404,8 @@ export async function publish(
     ].join(' && ');
 
     runHostCmd(`git fetch ${ghRepo} ${ghBranch} || true`, cwd, logger);
-    const refRemoteCheck = `git show-ref --verify --quiet "refs/remotes/${ghRepo}/${ghBranch}"`;
+    const refRemoteCheck =
+      `git show-ref --verify --quiet ` + `"refs/remotes/${ghRepo}/${ghBranch}"`;
     const addFromRemote =
       `git worktree add "${tmpWorktree}" -B ${ghBranch} ` +
       `${ghRepo}/${ghBranch}`;
@@ -598,7 +429,7 @@ export async function publish(
     const indexPath = path.join(dstDir, 'index.yaml');
     let indexDoc = HelmIndex.fromFile(indexPath);
 
-    const chart = HelmChart.from(path.join(cwd, pluginConfig.chartPath));
+    const chart = HelmChart.from(path.join(cwd, cfg.getChartPath()));
     for (const tgz of files) {
       const abs = path.isAbsolute(tgz) ? tgz : path.join(cwd, tgz);
       const filename = path.basename(abs);
@@ -639,7 +470,7 @@ export async function publish(
         logger,
       );
     } catch {
-      // ignore
+      //
     }
 
     logger.log(
@@ -651,4 +482,5 @@ export async function publish(
   logger.log('publish: done');
 }
 
+// noinspection JSUnusedGlobalSymbols
 export default { verifyConditions, prepare, publish };

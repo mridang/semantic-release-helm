@@ -122,7 +122,7 @@ export class HelmIndex {
     const created = new Date().toISOString();
 
     const urls =
-      typeof baseUrl === 'string' && baseUrl.trim().length > 0
+      baseUrl.trim().length > 0
         ? [`${baseUrl.replace(/\/+$/, '')}/${filename}`]
         : [filename];
 
