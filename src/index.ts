@@ -11,6 +11,7 @@ import { DockerCliClient } from './docker/cli-client.js';
 import { DockerImage } from './docker/image.js';
 import { runHostCmd } from './command-runner.js';
 import { HelmPluginConfig, HelmConfig } from './plugin-config.js';
+import { DockerHelmDocs } from './helm-docs.js';
 
 export interface ChartYaml {
   name: string;
@@ -193,7 +194,7 @@ export async function verifyConditions(
  * in the release commit before publishing:
  * - sets the chart version in Chart.yaml to `nextRelease.version`,
  * - lints and templates the chart with Helm to fail early on errors,
- * - runs `helm-docs` in the chart directory (best-effort),
+ * - normalizes README markers back to the Go template call, then runs helm-docs,
  * - packages the chart into `dist/charts/*.tgz`.
  *
  * The function intentionally does not create `index.yaml` in `dist/charts` so
@@ -245,15 +246,9 @@ export async function prepare(
     logger,
   );
 
-  const docsImage = cfg.getDocsImage();
-  const docsArgs = cfg.getDocsArgs();
+  const helmDocs = new DockerHelmDocs({ image: cfg.getDocsImage() });
   try {
-    await runDockerCmd(
-      docsImage,
-      ['helm-docs', `--chart-search-root=${cfg.getChartPath()}`, ...docsArgs],
-      cwd,
-      logger,
-    );
+    await helmDocs.generate(cwd, cfg.getChartPath(), cfg.getDocsArgs(), logger);
     logger.log('prepare: helm-docs succeeded');
   } catch {
     logger.log(
