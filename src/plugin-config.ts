@@ -10,6 +10,13 @@ export interface HelmPluginConfig extends PluginConfig {
   chartPath: string;
 
   /**
+   * Values passed to `helm template` during the prepare step.
+   * Useful for charts that require certain values to be set
+   * for validation to pass.
+   */
+  templateValues?: Record<string, unknown>;
+
+  /**
    * OCI repository to push charts to. Example:
    * `"oci://registry.example.com/charts"`. When omitted, OCI publish
    * is skipped and only gh-pages (if enabled) is used.
@@ -117,6 +124,15 @@ export class HelmConfig {
 
   constructor(cfg: HelmPluginConfig) {
     this.cfg = cfg;
+  }
+
+  /**
+   * Values for `helm template` during the prepare step.
+   *
+   * @returns A key-value map or `undefined`.
+   */
+  getTemplateValues(): Record<string, unknown> | undefined {
+    return this.cfg.templateValues;
   }
 
   /**

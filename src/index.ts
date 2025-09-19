@@ -241,7 +241,43 @@ export async function prepare(
   await runDockerCmd(helmImage, ['lint', cfg.getChartPath()], cwd, logger);
   await runDockerCmd(
     helmImage,
-    ['template', 'sr-check', cfg.getChartPath()],
+    [
+      'template',
+      'sr-check',
+      cfg.getChartPath(),
+      ...(() => {
+        const templateValues = cfg.getTemplateValues();
+        if (!templateValues) {
+          return [];
+        }
+
+        const flattenObject = (
+          obj: Record<string, unknown>,
+          prefix = '',
+        ): Record<string, string> =>
+          Object.keys(obj).reduce((acc: Record<string, string>, k: string) => {
+            const pre = prefix.length ? `${prefix}.` : '';
+            const value = obj[k];
+            if (
+              typeof value === 'object' &&
+              value !== null &&
+              !Array.isArray(value)
+            ) {
+              Object.assign(
+                acc,
+                flattenObject(value as Record<string, unknown>, pre + k),
+              );
+            } else {
+              acc[pre + k] = String(value);
+            }
+            return acc;
+          }, {});
+
+        return Object.entries(flattenObject(templateValues)).flatMap(
+          ([key, value]) => ['--set', `${key}=${value}`],
+        );
+      })(),
+    ],
     cwd,
     logger,
   );
