@@ -479,7 +479,28 @@ export async function publish(
 
     indexDoc.writeTo(indexPath);
 
+    logger.log('gh-pages: running git status before add');
+    runHostCmd(
+      `git -C "${tmpWorktree}" status --untracked-files=all`,
+      cwd,
+      logger,
+    );
+
     runHostCmd(`git -C "${tmpWorktree}" add .`, cwd, logger);
+
+    logger.log('gh-pages: running git status after add');
+    runHostCmd(`git -C "${tmpWorktree}" status`, cwd, logger);
+    logger.log('gh-pages: showing staged file diff');
+    runHostCmd(`git -C "${tmpWorktree}" diff --staged --stat`, cwd, logger);
+
+    runHostCmd(
+      `git -C "${tmpWorktree}" commit -m ` +
+        `"docs(charts): update Helm repo (merge index) [skip ci]" ` +
+        `|| echo "No changes"`,
+      cwd,
+      logger,
+    );
+
     runHostCmd(
       `git -C "${tmpWorktree}" commit -m ` +
         `"docs(charts): update Helm repo (merge index) [skip ci]" ` +
