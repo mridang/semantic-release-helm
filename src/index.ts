@@ -115,6 +115,7 @@ function setChartVersion(rawYaml: string, version: string): string {
  * - required Docker images can be pulled,
  * - the Chart.yaml exists at the configured path,
  * - OCI configuration is coherent if provided.
+ * - Git configuration and gh-pages access is valid if enabled.
  *
  * The method logs the effective Helm/docs images, reports whether GH Pages
  * mode is enabled and the resolved public URL, and rejects incomplete OCI
@@ -163,10 +164,52 @@ export async function verifyConditions(
 
   if (cfg.isGhEnabled()) {
     const url = cfg.getGhUrl();
+    const ghRepo = cfg.getGhRepo();
     logger.log(
       `verifyConditions: GH Pages mode (default). Resolved URL: ` +
         `${url ?? '(none; index will be written without --url)'}`,
     );
+
+    try {
+      runHostCmd('git --version', cwd, logger);
+    } catch {
+      throw new SemanticReleaseError(
+        'Git not available for gh-pages publishing.',
+        'ENOGIT',
+        'Git must be installed and on PATH for gh-pages mode.',
+      );
+    }
+
+    try {
+      runHostCmd('git rev-parse --git-dir', cwd, logger);
+    } catch {
+      throw new SemanticReleaseError(
+        'Not in a git repository.',
+        'ENOTGITREPO',
+        'gh-pages mode requires running from within a git repository.',
+      );
+    }
+
+    try {
+      runHostCmd(`git remote get-url ${ghRepo}`, cwd, logger);
+    } catch {
+      throw new SemanticReleaseError(
+        `Git remote "${ghRepo}" not found.`,
+        'ENOREMOTE',
+        `gh-pages mode requires a configured remote named "${ghRepo}".`,
+      );
+    }
+
+    try {
+      runHostCmd(`git ls-remote --heads ${ghRepo}`, cwd, logger);
+      logger.log(`verifyConditions: remote "${ghRepo}" is accessible`);
+    } catch {
+      throw new SemanticReleaseError(
+        `Cannot access remote repository "${ghRepo}".`,
+        'EREMOTEACCESS',
+        `Check git credentials and network connectivity to ${ghRepo}.`,
+      );
+    }
   }
 
   if (cfg.isOciEnabled()) {
@@ -381,14 +424,13 @@ export async function publish(
     if (cfg.getOciInsecure() && hostPort) {
       const cfgJson = `{"auths":{"${hostPort}":{"insecure":true}}}`;
       steps.push(
-        'mkdir -p /root/.config/helm/registry',
+        'mkdir --parents /root/.config/helm/registry',
         `printf %s '${cfgJson}' > /root/.config/helm/registry/config.json`,
       );
     }
     if (haveUser && havePass && hostPort) {
       steps.push(
-        `helm registry login${insecureLoginFlag} ` +
-          `--username=${username} --password=${password} ${hostPort}`,
+        `helm registry login${insecureLoginFlag} --username=${username} --password=${password} ${hostPort}`,
       );
     }
 
@@ -415,16 +457,11 @@ export async function publish(
     const dstDir = path.join(tmpWorktree, ghDir);
 
     try {
-      runHostCmd(
-        `git worktree remove "${tmpWorktree}" --force || ` +
-          `echo "gh-pages cleanup: not a worktree"`,
-        cwd,
-        logger,
-      );
+      runHostCmd(`git worktree remove "${tmpWorktree}" --force`, cwd, logger);
     } catch {
-      // ignore
+      logger.log('gh-pages cleanup: worktree not found (expected)');
     }
-    runHostCmd(`rm -rf "${tmpWorktree}"`, cwd, logger);
+    runHostCmd(`rm --recursive --force "${tmpWorktree}"`, cwd, logger);
 
     const refCheck = `git show-ref --verify --quiet "refs/heads/${ghBranch}"`;
     const addExisting = `git worktree add "${tmpWorktree}" ${ghBranch}`;
@@ -434,7 +471,11 @@ export async function publish(
       `git -C "${tmpWorktree}" reset --hard`,
     ].join(' && ');
 
-    runHostCmd(`git fetch ${ghRepo} ${ghBranch} || true`, cwd, logger);
+    try {
+      runHostCmd(`git fetch ${ghRepo} ${ghBranch}`, cwd, logger);
+    } catch {
+      logger.log('gh-pages: branch does not exist remotely (will create)');
+    }
     const refRemoteCheck =
       `git show-ref --verify --quiet ` + `"refs/remotes/${ghRepo}/${ghBranch}"`;
     const addFromRemote =
@@ -493,21 +534,16 @@ export async function publish(
     logger.log('gh-pages: showing staged file diff');
     runHostCmd(`git -C "${tmpWorktree}" diff --staged --stat`, cwd, logger);
 
-    runHostCmd(
-      `git -C "${tmpWorktree}" commit -m ` +
-        `"docs(charts): update Helm repo (merge index) [skip ci]" ` +
-        `|| echo "No changes"`,
-      cwd,
-      logger,
-    );
+    try {
+      runHostCmd(
+        `git -C "${tmpWorktree}" commit -m "docs(charts): update Helm repo (merge index) [skip ci]"`,
+        cwd,
+        logger,
+      );
+    } catch {
+      logger.log('gh-pages: no changes to commit');
+    }
 
-    runHostCmd(
-      `git -C "${tmpWorktree}" commit -m ` +
-        `"docs(charts): update Helm repo (merge index) [skip ci]" ` +
-        `|| echo "No changes"`,
-      cwd,
-      logger,
-    );
     runHostCmd(
       `git -C "${tmpWorktree}" push ${ghRepo} ${ghBranch}`,
       cwd,
@@ -515,14 +551,9 @@ export async function publish(
     );
 
     try {
-      runHostCmd(
-        `git worktree remove "${tmpWorktree}" --force || ` +
-          `echo "gh-pages worktree already removed or not a working tree"`,
-        cwd,
-        logger,
-      );
+      runHostCmd(`git worktree remove "${tmpWorktree}" --force`, cwd, logger);
     } catch {
-      //
+      logger.log('gh-pages worktree cleanup: already removed');
     }
 
     logger.log(
