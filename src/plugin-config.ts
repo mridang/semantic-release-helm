@@ -84,12 +84,6 @@ export interface HelmPluginConfig extends PluginConfig {
      * Branch name used for gh-pages content. Default: `"gh-pages"`.
      */
     branch?: string;
-
-    /**
-     * Subdirectory in the gh-pages worktree where charts live.
-     * Default: `"charts"`.
-     */
-    dir?: string;
   };
 }
 
@@ -205,15 +199,6 @@ export class HelmConfig {
    */
   getGhBranch(): string {
     return this.cfg.ghPages?.branch ?? 'gh-pages';
-  }
-
-  /**
-   * Subdirectory inside the gh-pages worktree for charts.
-   *
-   * @returns Directory name.
-   */
-  getGhDir(): string {
-    return this.cfg.ghPages?.dir ?? 'charts';
   }
 
   /**

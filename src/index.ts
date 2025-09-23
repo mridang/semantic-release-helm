@@ -11,7 +11,7 @@ import { HelmChart } from './helm-chart.js';
 import { DockerCliClient } from './docker/cli-client.js';
 import { DockerImage } from './docker/image.js';
 import { runHostCmd } from './command-runner.js';
-import { HelmPluginConfig, HelmConfig } from './plugin-config.js';
+import { HelmConfig, HelmPluginConfig } from './plugin-config.js';
 import { DockerHelmDocs } from './helm-docs.js';
 
 export interface ChartYaml {
@@ -453,10 +453,8 @@ export async function publish(
   if (cfg.isGhEnabled()) {
     const ghBranch = cfg.getGhBranch();
     const ghRepo = cfg.getGhRepo();
-    const ghDir = cfg.getGhDir();
 
     const tmpWorktree = path.join(cwd, '.gh-pages-tmp');
-    const dstDir = path.join(tmpWorktree, ghDir);
 
     try {
       runHostCmd(`git worktree remove "${tmpWorktree}" --force`, cwd, logger);
@@ -491,9 +489,9 @@ export async function publish(
       logger,
     );
 
-    fs.mkdirSync(dstDir, { recursive: true });
+    fs.mkdirSync(tmpWorktree, { recursive: true });
 
-    const indexPath = path.join(dstDir, 'index.yaml');
+    const indexPath = path.join(tmpWorktree, 'index.yaml');
     let indexDoc = HelmIndex.fromFile(indexPath);
 
     const chart = HelmChart.from(path.join(cwd, cfg.getChartPath()));

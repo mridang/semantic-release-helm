@@ -13,7 +13,7 @@ function writeChart(
   version: string,
   extra?: Record<string, unknown>,
 ): string {
-  const chartDir = path.join(dir, 'charts', name);
+  const chartDir = path.join(dir, name);
   fs.mkdirSync(chartDir, { recursive: true });
   const chartFile = path.join(chartDir, 'Chart.yaml');
   const doc = yaml.stringify({

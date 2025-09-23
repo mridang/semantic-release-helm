@@ -16,7 +16,6 @@ describe('HelmConfig', () => {
         url: cfg.getGhUrl(),
         repo: cfg.getGhRepo(),
         branch: cfg.getGhBranch(),
-        dir: cfg.getGhDir(),
       },
       oci: {
         enabled: cfg.isOciEnabled(),
@@ -42,7 +41,6 @@ describe('HelmConfig', () => {
         url: undefined,
         repo: 'origin',
         branch: 'gh-pages',
-        dir: 'charts',
       },
       oci: {
         enabled: false,
@@ -88,7 +86,6 @@ describe('HelmConfig', () => {
         url: 'https://charts.example.test',
         repo: 'upstream',
         branch: 'pages',
-        dir: 'helm',
       },
     } as HelmPluginConfig);
 
@@ -97,13 +94,11 @@ describe('HelmConfig', () => {
       url: cfg.getGhUrl(),
       repo: cfg.getGhRepo(),
       branch: cfg.getGhBranch(),
-      dir: cfg.getGhDir(),
     }).toEqual({
       enabled: false,
       url: 'https://charts.example.test',
       repo: 'upstream',
       branch: 'pages',
-      dir: 'helm',
     });
   });
 

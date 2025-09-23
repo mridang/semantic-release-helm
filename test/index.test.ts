@@ -82,7 +82,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     fs.mkdirSync(workdir, { recursive: true });
 
     const srcChart = path.join(__dirname, 'chart');
-    const destChart = path.join(workdir, 'charts', 'app');
+    const destChart = path.join(workdir, 'app');
 
     if (!fs.existsSync(srcChart)) {
       const here = fs.readdirSync(__dirname).join(', ');
@@ -92,7 +92,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     fs.mkdirSync(path.dirname(destChart), { recursive: true });
     fs.cpSync(srcChart, destChart, { recursive: true });
 
-    chartPathInWorkdir = 'charts/app';
+    chartPathInWorkdir = 'app';
   });
 
   afterEach(() => {
@@ -130,7 +130,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     await expect(prepare(cfg, ctx)).resolves.toBeUndefined();
 
     const chartYaml = fs.readFileSync(
-      path.join(workdir, 'charts', 'app', 'Chart.yaml'),
+      path.join(workdir, 'app', 'Chart.yaml'),
       'utf8',
     );
     expect(chartYaml).toMatch(/version:\s*0\.2\.0/);
@@ -244,7 +244,6 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
       ghPages: {
         enabled: true,
         branch: 'gh-pages',
-        dir: 'charts',
         url: 'https://example.test/charts',
       },
     };
@@ -266,7 +265,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     fs.mkdirSync(checkDir, { recursive: true });
     execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
 
-    const chartsDir = path.join(checkDir, 'charts');
+    const chartsDir = path.join(checkDir);
     expect(fs.existsSync(chartsDir)).toBe(true);
 
     const indexPath = path.join(chartsDir, 'index.yaml');
@@ -326,7 +325,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     await publish(
       {
         ...baseCfg,
-        ghPages: { enabled: true, branch: 'gh-pages', dir: 'charts' },
+        ghPages: { enabled: true, branch: 'gh-pages' },
       },
       { logger, cwd: workdir } as unknown as PublishContext,
     );
@@ -339,7 +338,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     await publish(
       {
         ...baseCfg,
-        ghPages: { enabled: true, branch: 'gh-pages', dir: 'charts' },
+        ghPages: { enabled: true, branch: 'gh-pages' },
       },
       { logger, cwd: workdir } as unknown as PublishContext,
     );
@@ -348,7 +347,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     fs.mkdirSync(checkDir, { recursive: true });
     execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
 
-    const indexPath = path.join(checkDir, 'charts', 'index.yaml');
+    const indexPath = path.join(checkDir, 'index.yaml');
     const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
       apiVersion: string;
       entries: Record<string, Array<{ version: string }>>;
@@ -411,7 +410,6 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
           ghPages: {
             enabled: true,
             branch: 'gh-pages',
-            dir: 'charts',
             url: 'https://example.test/charts',
           },
         },
@@ -422,7 +420,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     const checkDir = path.join(workdir, '.check-both');
     fs.mkdirSync(checkDir, { recursive: true });
     execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
-    const indexPath = path.join(checkDir, 'charts', 'index.yaml');
+    const indexPath = path.join(checkDir, 'index.yaml');
 
     const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
       apiVersion: string;
@@ -473,7 +471,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
         chartPath: chartPathInWorkdir,
         helmImage: HELM_IMAGE,
         docsImage: DOCS_IMAGE,
-        ghPages: { enabled: true, branch: 'gh-pages', dir: 'charts' },
+        ghPages: { enabled: true, branch: 'gh-pages' },
       },
       { logger, cwd: workdir } as unknown as PublishContext,
     );
@@ -481,7 +479,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     const checkDir = path.join(workdir, '.check-relative');
     fs.mkdirSync(checkDir, { recursive: true });
     execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
-    const indexPath = path.join(checkDir, 'charts', 'index.yaml');
+    const indexPath = path.join(checkDir, 'index.yaml');
 
     const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
       apiVersion: string;
@@ -511,7 +509,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     execSync(`git -C "${tmpWorktree}" switch --orphan gh-pages`);
     execSync(`git -C "${tmpWorktree}" reset --hard`);
 
-    const chartsDir = path.join(tmpWorktree, 'charts');
+    const chartsDir = path.join(tmpWorktree);
     fs.mkdirSync(chartsDir, { recursive: true });
     const seedIndex = yaml.stringify({
       apiVersion: 'v1',
@@ -554,7 +552,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
         chartPath: chartPathInWorkdir,
         helmImage: HELM_IMAGE,
         docsImage: DOCS_IMAGE,
-        ghPages: { enabled: true, branch: 'gh-pages', dir: 'charts' },
+        ghPages: { enabled: true, branch: 'gh-pages' },
       },
       { logger, cwd: workdir } as unknown as PublishContext,
     );
@@ -562,7 +560,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
     const checkDir = path.join(workdir, '.check-preserve');
     fs.mkdirSync(checkDir, { recursive: true });
     execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
-    const indexPath = path.join(checkDir, 'charts', 'index.yaml');
+    const indexPath = path.join(checkDir, 'index.yaml');
 
     const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
       apiVersion: string;
@@ -609,7 +607,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
           execSync(`git worktree add --detach "${tmp}"`, { cwd: workdir });
           execSync(`git -C "${tmp}" switch --orphan gh-pages`);
           execSync(`git -C "${tmp}" reset --hard`);
-          const chartsDir = path.join(tmp, 'charts');
+          const chartsDir = path.join(tmp);
           fs.mkdirSync(chartsDir, { recursive: true });
           const seeded = yaml.stringify({ apiVersion: 'v1', entries: {} });
           fs.writeFileSync(path.join(chartsDir, 'index.yaml'), seeded, 'utf8');
@@ -623,7 +621,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
           execSync(`git worktree add --detach "${tmp}"`, { cwd: workdir });
           execSync(`git -C "${tmp}" switch --orphan gh-pages`);
           execSync(`git -C "${tmp}" reset --hard`);
-          const chartsDir = path.join(tmp, 'charts');
+          const chartsDir = path.join(tmp);
           fs.mkdirSync(chartsDir, { recursive: true });
           const seeded = yaml.stringify({ apiVersion: 'v1', entries: {} });
           fs.writeFileSync(path.join(chartsDir, 'index.yaml'), seeded, 'utf8');
@@ -675,7 +673,6 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
               ghPages: {
                 enabled: true,
                 branch: 'gh-pages',
-                dir: 'charts',
                 url:
                   urlMode === 'absolute'
                     ? 'https://example.test/charts'
@@ -694,7 +691,7 @@ describe('semantic-release-helm (integration, real Docker + local git)', () => {
         const checkDir = path.join(workdir, `.check-matrix-${seed}-${urlMode}`);
         fs.mkdirSync(checkDir, { recursive: true });
         execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
-        const indexPath = path.join(checkDir, 'charts', 'index.yaml');
+        const indexPath = path.join(checkDir, 'index.yaml');
         expect(fs.existsSync(indexPath)).toBe(true);
 
         const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
