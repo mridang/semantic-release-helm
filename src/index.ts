@@ -19,6 +19,11 @@ export interface ChartYaml {
   [key: string]: string | number | boolean | object | undefined;
 }
 
+const COMMIT_NAME = 'semantic-release-bot';
+const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
+const gitAuthorName = process.env.GIT_AUTHOR_NAME || COMMIT_NAME;
+const gitAuthorEmail = process.env.GIT_AUTHOR_EMAIL || COMMIT_EMAIL;
+
 /**
  * Run a Docker image with the repository mounted at `/apps` and a given set of
  * CLI arguments. This builds a `docker run` invocation with a deterministic
@@ -536,12 +541,20 @@ export async function publish(
 
     try {
       runHostCmd(
-        `git -C "${tmpWorktree}" commit -m "docs(charts): update Helm repo (merge index) [skip ci]"`,
+        `git -C "${tmpWorktree}" -c user.name="${gitAuthorName}" -c user.email="${gitAuthorEmail}" commit --message="docs(charts): update Helm repo (merge index) [skip ci]"`,
         cwd,
         logger,
       );
-    } catch {
-      logger.log('gh-pages: no changes to commit');
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (
+        errMsg.includes('nothing to commit') ||
+        errMsg.includes('no changes added')
+      ) {
+        logger.log('gh-pages: no changes to commit');
+      } else {
+        throw err;
+      }
     }
 
     runHostCmd(
