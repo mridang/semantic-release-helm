@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 // @ts-expect-error semantic-release types are not bundled
 import { Context } from 'semantic-release';
 // @ts-expect-error semantic-release types are not bundled
@@ -21,8 +22,6 @@ export interface ChartYaml {
 
 const COMMIT_NAME = 'semantic-release-bot';
 const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
-const gitAuthorName = process.env.GIT_AUTHOR_NAME || COMMIT_NAME;
-const gitAuthorEmail = process.env.GIT_AUTHOR_EMAIL || COMMIT_EMAIL;
 
 /**
  * Run a Docker image with the repository mounted at `/apps` and a given set of
@@ -455,10 +454,8 @@ export async function publish(
     const ghBranch = cfg.getGhBranch();
     const ghRepo = cfg.getGhRepo();
     const ghDir = cfg.getGhDir();
-    const baseUrl = cfg.getGhUrl();
 
     const tmpWorktree = path.join(cwd, '.gh-pages-tmp');
-    const srcDir = path.join(cwd, 'dist', 'charts');
     const dstDir = path.join(tmpWorktree, ghDir);
 
     try {
@@ -495,32 +492,30 @@ export async function publish(
     );
 
     fs.mkdirSync(dstDir, { recursive: true });
-    for (const entry of fs.readdirSync(srcDir)) {
-      if (entry.endsWith('.tgz')) {
-        const from = path.join(srcDir, entry);
-        const to = path.join(dstDir, entry);
-        fs.copyFileSync(from, to);
-      }
-    }
 
     const indexPath = path.join(dstDir, 'index.yaml');
     let indexDoc = HelmIndex.fromFile(indexPath);
 
     const chart = HelmChart.from(path.join(cwd, cfg.getChartPath()));
+
+    const remoteUrl = execSync(`git remote get-url ${ghRepo}`, {
+      cwd,
+      encoding: 'utf8',
+    }).trim();
+    const repoPath = remoteUrl
+      .replace(/^git@github\.com:/, '')
+      .replace(/^https:\/\/github\.com\//, '')
+      .replace(/\.git$/, '');
+
     for (const tgz of files) {
       const abs = path.isAbsolute(tgz) ? tgz : path.join(cwd, tgz);
       const filename = path.basename(abs);
-      const extra =
-        typeof baseUrl === 'string' && baseUrl.trim().length > 0
-          ? undefined
-          : { urls: [filename] as string[] };
+      const version = filename.match(/-(\d+\.\d+\.\d+)\.tgz$/)?.[1] || '0.0.0';
+      const githubReleaseUrl = `https://github.com/${repoPath}/releases/download/v${version}/${filename}`;
 
-      indexDoc = indexDoc.append(
-        chart,
-        abs,
-        typeof baseUrl === 'string' ? baseUrl : '',
-        extra,
-      );
+      indexDoc = indexDoc.append(chart, abs, '', {
+        urls: [githubReleaseUrl] as string[],
+      });
     }
 
     indexDoc.writeTo(indexPath);
@@ -538,6 +533,9 @@ export async function publish(
     runHostCmd(`git -C "${tmpWorktree}" status`, cwd, logger);
     logger.log('gh-pages: showing staged file diff');
     runHostCmd(`git -C "${tmpWorktree}" diff --staged --stat`, cwd, logger);
+
+    const gitAuthorName = process.env.GIT_AUTHOR_NAME || COMMIT_NAME;
+    const gitAuthorEmail = process.env.GIT_AUTHOR_EMAIL || COMMIT_EMAIL;
 
     try {
       runHostCmd(
