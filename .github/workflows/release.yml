@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 defaults:
   run:
@@ -25,6 +26,7 @@ jobs:
         with:
           cache: 'npm'
           node-version-file: '.nvmrc'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Cache node modules
         uses: actions/cache@v4
@@ -38,8 +40,6 @@ jobs:
         run: npm ci
 
       - name: Run semantic-release
-        uses: mridang/action-semantic-release@v1
+        uses: mridang/action-semantic-release@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
