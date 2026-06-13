@@ -11,7 +11,7 @@ import * as os from 'os';
  * @param prefix Directory name prefix, e.g. "sr-".
  * @returns      Absolute path to the created temporary directory.
  */
-export function makeTempDir(prefix = 'sr-'): string {
+function makeTempDir(prefix = 'sr-'): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
