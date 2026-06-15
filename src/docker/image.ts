@@ -5,7 +5,7 @@ import { DockerCliClient } from './cli-client.js';
  * Options controlling execution defaults for a specific image instance.
  * Values apply to all runs through the wrapper for that instance only.
  */
-export interface DockerImageOptions {
+interface DockerImageOptions {
   workdir?: string;
   mounts?: Array<{
     host: string;

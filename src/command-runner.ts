@@ -89,6 +89,3 @@ export function runHostCmd(
     throw err;
   }
 }
-
-// noinspection JSUnusedGlobalSymbols
-export default { runHostCmd };

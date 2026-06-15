@@ -4,7 +4,7 @@ import { DockerCliClient } from './docker/cli-client.js';
 import { DockerImage } from './docker/image.js';
 import type { DockerClient } from './docker/client.js';
 
-export interface Logger {
+interface Logger {
   log: (m: string) => void;
   error: (m: string) => void;
 }
@@ -13,7 +13,7 @@ export interface Logger {
  * Public interface for README docs generation for a Helm chart.
  * Implementations may use Docker or a native binary.
  */
-export interface HelmDocs {
+interface HelmDocs {
   /**
    * Normalize README markers and generate docs for a chart.
    *
@@ -35,9 +35,9 @@ export interface HelmDocs {
  * replaced with the Go template call before running helm-docs.
  */
 export const VALUES_TABLE_TEMPLATE = '{{ template "chart.valuesTable" . }}';
-export const VALUES_TABLE_START_RE = /<!--\s*render\.chart\.valuesTable\s*-->/i;
-export const VALUES_TABLE_END_RE = /<!--\s*end\.chart\.valuesTable\s*-->/i;
-export const VALUES_TABLE_BLOCK_RE = new RegExp(
+const VALUES_TABLE_START_RE = /<!--\s*render\.chart\.valuesTable\s*-->/i;
+const VALUES_TABLE_END_RE = /<!--\s*end\.chart\.valuesTable\s*-->/i;
+const VALUES_TABLE_BLOCK_RE = new RegExp(
   String(VALUES_TABLE_START_RE).slice(1, -2) +
     '[\\s\\S]*?' +
     String(VALUES_TABLE_END_RE).slice(1, -2),
@@ -80,7 +80,7 @@ export function normalizeReadmeValuesTableFile(absPath: string): {
   return { changed };
 }
 
-export interface DockerHelmDocsOptions {
+interface DockerHelmDocsOptions {
   image?: string;
   client?: DockerClient;
 }

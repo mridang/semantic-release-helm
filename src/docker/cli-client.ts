@@ -53,7 +53,7 @@ export function buildDockerRun(
  * A synchronous runner function that executes a shell command with a
  * specific working directory and returns trimmed UTF-8 standard out.
  */
-export interface Runner {
+interface Runner {
   (cmd: string, cwd: string): { stdout: string };
 }
 
@@ -61,7 +61,7 @@ export interface Runner {
  * Default runner that executes commands via execSync with UTF-8 text
  * decoding and returns the trimmed stdout for logging and callers.
  */
-export const defaultRunner: Runner = (cmd, cwd) => {
+const defaultRunner: Runner = (cmd, cwd) => {
   const out = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf8' }).trim();
   return { stdout: out };
 };
