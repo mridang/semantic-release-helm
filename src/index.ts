@@ -15,8 +15,8 @@ import { DockerImage } from './docker/image.js';
 import { runHostCmd } from './command-runner.js';
 import { HelmConfig, HelmPluginConfig } from './plugin-config.js';
 import { DockerHelmDocs } from './helm-docs.js';
+import { commitIfStaged } from './gh-pages.js';
 import { buildOciScript, OCI_PASSWORD_ENV } from './oci-publish.js';
-import { messageOf } from './utils/error.js';
 import { flattenRecord } from './utils/object.js';
 
 export type { ChartYaml } from './helm-chart.js';
@@ -469,23 +469,13 @@ export async function publish(
     const gitAuthorName = process.env.GIT_AUTHOR_NAME || COMMIT_NAME;
     const gitAuthorEmail = process.env.GIT_AUTHOR_EMAIL || COMMIT_EMAIL;
 
-    try {
-      runHostCmd(
-        `git -C "${tmpWorktree}" -c user.name="${gitAuthorName}" -c user.email="${gitAuthorEmail}" commit --message="docs(charts): update Helm repo (merge index) [skip ci]"`,
-        cwd,
-        logger,
-      );
-    } catch (err) {
-      const errMsg = messageOf(err);
-      if (
-        errMsg.includes('nothing to commit') ||
-        errMsg.includes('no changes added')
-      ) {
-        logger.log('gh-pages: no changes to commit');
-      } else {
-        throw err;
-      }
-    }
+    commitIfStaged(
+      tmpWorktree,
+      cwd,
+      'docs(charts): update Helm repo (merge index) [skip ci]',
+      { name: gitAuthorName, email: gitAuthorEmail },
+      logger,
+    );
 
     runHostCmd(
       `git -C "${tmpWorktree}" push ${ghRepo} ${ghBranch}`,
