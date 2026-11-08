@@ -9,13 +9,17 @@ import type {
 } from 'semantic-release';
 import { HelmIndex } from './helm-index.js';
 import { HelmChart, setChartVersion } from './helm-chart.js';
-import { DockerCliClient } from './docker/cli-client.js';
+import { DockerCliClient, quoteWord } from './docker/cli-client.js';
 import type { Logger } from './docker/client.js';
 import { DockerImage } from './docker/image.js';
 import { runHostCmd } from './command-runner.js';
 import { HelmConfig, HelmPluginConfig } from './plugin-config.js';
 import { DockerHelmDocs } from './helm-docs.js';
-import { commitIfStaged, repositoryWebBase } from './gh-pages.js';
+import {
+  buildWorktreeAddCommand,
+  commitIfStaged,
+  repositoryWebBase,
+} from './gh-pages.js';
 import { buildOciScript, OCI_PASSWORD_ENV } from './oci-publish.js';
 import { flattenRecord } from './utils/object.js';
 
@@ -169,7 +173,7 @@ export async function verifyConditions(
     }
 
     try {
-      runHostCmd(`git remote get-url ${ghRepo}`, cwd, logger);
+      runHostCmd(`git remote get-url ${quoteWord(ghRepo)}`, cwd, logger);
     } catch {
       throw new SemanticReleaseError(
         `Git remote "${ghRepo}" not found.`,
@@ -179,7 +183,7 @@ export async function verifyConditions(
     }
 
     try {
-      runHostCmd(`git ls-remote --heads ${ghRepo}`, cwd, logger);
+      runHostCmd(`git ls-remote --heads ${quoteWord(ghRepo)}`, cwd, logger);
       logger.log(`verifyConditions: remote "${ghRepo}" is accessible`);
     } catch {
       throw new SemanticReleaseError(
@@ -395,34 +399,28 @@ export async function publish(
     const tmpWorktree = path.join(cwd, '.gh-pages-tmp');
 
     try {
-      runHostCmd(`git worktree remove "${tmpWorktree}" --force`, cwd, logger);
+      runHostCmd(
+        `git worktree remove ${quoteWord(tmpWorktree)} --force`,
+        cwd,
+        logger,
+      );
     } catch {
       logger.log('gh-pages cleanup: worktree not found (expected)');
     }
-    runHostCmd(`rm --recursive --force "${tmpWorktree}"`, cwd, logger);
-
-    const refCheck = `git show-ref --verify --quiet "refs/heads/${ghBranch}"`;
-    const addExisting = `git worktree add "${tmpWorktree}" ${ghBranch}`;
-    const addOrphan = [
-      `git worktree add --detach "${tmpWorktree}"`,
-      `git -C "${tmpWorktree}" switch --orphan ${ghBranch}`,
-      `git -C "${tmpWorktree}" reset --hard`,
-    ].join(' && ');
+    fs.rmSync(tmpWorktree, { recursive: true, force: true });
 
     try {
-      runHostCmd(`git fetch ${ghRepo} ${ghBranch}`, cwd, logger);
+      runHostCmd(
+        `git fetch ${quoteWord(ghRepo)} ${quoteWord(ghBranch)}`,
+        cwd,
+        logger,
+      );
     } catch {
       logger.log('gh-pages: branch does not exist remotely (will create)');
     }
-    const refRemoteCheck =
-      `git show-ref --verify --quiet ` + `"refs/remotes/${ghRepo}/${ghBranch}"`;
-    const addFromRemote =
-      `git worktree add "${tmpWorktree}" -B ${ghBranch} ` +
-      `${ghRepo}/${ghBranch}`;
 
     runHostCmd(
-      `${refRemoteCheck} && (${addFromRemote}) || ` +
-        `(${refCheck} && (${addExisting}) || (${addOrphan}))`,
+      buildWorktreeAddCommand(tmpWorktree, ghRepo, ghBranch),
       cwd,
       logger,
     );
@@ -432,7 +430,7 @@ export async function publish(
     const indexPath = path.join(tmpWorktree, 'index.yaml');
     const chart = HelmChart.from(path.join(cwd, cfg.getChartPath()));
 
-    const remoteUrl = execSync(`git remote get-url ${ghRepo}`, {
+    const remoteUrl = execSync(`git remote get-url ${quoteWord(ghRepo)}`, {
       cwd,
       encoding: 'utf8',
     }).trim();
@@ -451,17 +449,21 @@ export async function publish(
 
     logger.log('gh-pages: running git status before add');
     runHostCmd(
-      `git -C "${tmpWorktree}" status --untracked-files=all`,
+      `git -C ${quoteWord(tmpWorktree)} status --untracked-files=all`,
       cwd,
       logger,
     );
 
-    runHostCmd(`git -C "${tmpWorktree}" add .`, cwd, logger);
+    runHostCmd(`git -C ${quoteWord(tmpWorktree)} add .`, cwd, logger);
 
     logger.log('gh-pages: running git status after add');
-    runHostCmd(`git -C "${tmpWorktree}" status`, cwd, logger);
+    runHostCmd(`git -C ${quoteWord(tmpWorktree)} status`, cwd, logger);
     logger.log('gh-pages: showing staged file diff');
-    runHostCmd(`git -C "${tmpWorktree}" diff --staged --stat`, cwd, logger);
+    runHostCmd(
+      `git -C ${quoteWord(tmpWorktree)} diff --staged --stat`,
+      cwd,
+      logger,
+    );
 
     const gitAuthorName = process.env.GIT_AUTHOR_NAME || COMMIT_NAME;
     const gitAuthorEmail = process.env.GIT_AUTHOR_EMAIL || COMMIT_EMAIL;
@@ -475,13 +477,17 @@ export async function publish(
     );
 
     runHostCmd(
-      `git -C "${tmpWorktree}" push ${ghRepo} ${ghBranch}`,
+      `git -C ${quoteWord(tmpWorktree)} push ${quoteWord(ghRepo)} ${quoteWord(ghBranch)}`,
       cwd,
       logger,
     );
 
     try {
-      runHostCmd(`git worktree remove "${tmpWorktree}" --force`, cwd, logger);
+      runHostCmd(
+        `git worktree remove ${quoteWord(tmpWorktree)} --force`,
+        cwd,
+        logger,
+      );
     } catch {
       logger.log('gh-pages worktree cleanup: already removed');
     }

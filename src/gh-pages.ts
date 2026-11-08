@@ -84,3 +84,35 @@ export function repositoryWebBase(remoteUrl: string): string {
   const repoPath = pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/, '');
   return `https://${host || 'github.com'}/${repoPath}`;
 }
+
+/**
+ * Build the shell command that creates the temporary gh-pages working tree.
+ * It prefers the remote branch, then an existing local branch, then a fresh
+ * orphan branch. Every dynamic value is shell-quoted.
+ *
+ * @param worktree Path of the working tree to create.
+ * @param remote Git remote name.
+ * @param branch Branch name.
+ * @returns A command line for `sh`.
+ */
+export function buildWorktreeAddCommand(
+  worktree: string,
+  remote: string,
+  branch: string,
+): string {
+  const wt = quoteWord(worktree);
+  const br = quoteWord(branch);
+  const refRemoteCheck = `git show-ref --verify --quiet ${quoteWord(`refs/remotes/${remote}/${branch}`)}`;
+  const addFromRemote = `git worktree add ${wt} -B ${br} ${quoteWord(`${remote}/${branch}`)}`;
+  const refCheck = `git show-ref --verify --quiet ${quoteWord(`refs/heads/${branch}`)}`;
+  const addExisting = `git worktree add ${wt} ${br}`;
+  const addOrphan = [
+    `git worktree add --detach ${wt}`,
+    `git -C ${wt} switch --orphan ${br}`,
+    `git -C ${wt} reset --hard`,
+  ].join(' && ');
+  return (
+    `${refRemoteCheck} && (${addFromRemote}) || ` +
+    `(${refCheck} && (${addExisting}) || (${addOrphan}))`
+  );
+}

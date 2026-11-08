@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 import {
+  buildWorktreeAddCommand,
   commitIfStaged,
   hasStagedChanges,
   repositoryWebBase,
@@ -112,4 +113,49 @@ describe('repositoryWebBase', () => {
       repositoryWebBase('https://x-access-token:SECRET@github.com/o/r.git'),
     ).not.toContain('SECRET');
   });
+});
+
+describe('buildWorktreeAddCommand', () => {
+  it('quotes the worktree, remote and branch', () => {
+    const cmd = buildWorktreeAddCommand('/my repo/wt', 'up stream', 'pages;id');
+    expect(cmd).toContain("'/my repo/wt'");
+    expect(cmd).toContain("'refs/remotes/up stream/pages;id'");
+    expect(cmd).toContain("'pages;id'");
+    expect(cmd).not.toMatch(/ pages;id\b/);
+  });
+
+  it(
+    'creates an orphan branch in a path with spaces when none exists',
+    withTempDir((dir) => {
+      initRepo(dir);
+      git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
+      const wt = path.join(dir, 'work tree');
+      execFileSync(
+        'sh',
+        ['-c', buildWorktreeAddCommand(wt, 'origin', 'gh-pages')],
+        { cwd: dir },
+      );
+      expect(git(wt, 'symbolic-ref', '--short', 'HEAD').trim()).toBe(
+        'gh-pages',
+      );
+    }),
+  );
+
+  it(
+    'reuses an existing local branch',
+    withTempDir((dir) => {
+      initRepo(dir);
+      git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
+      git(dir, 'branch', 'pages');
+      const wt = path.join(dir, 'wt');
+      execFileSync(
+        'sh',
+        ['-c', buildWorktreeAddCommand(wt, 'origin', 'pages')],
+        {
+          cwd: dir,
+        },
+      );
+      expect(git(wt, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('pages');
+    }),
+  );
 });
