@@ -1,6 +1,9 @@
 import { Console } from 'node:console';
 import { Writable } from 'node:stream';
-import { runHostCmd } from '../src/command-runner.js';
+import { describe, expect, it } from '@jest/globals';
+// noinspection ES6PreferShortImport
+import { redactError, runLogged } from '../src/command-runner.js';
+import { run } from '../src/utils/exec.js';
 import { withTempDir } from './utils/tmpdir.js';
 
 function captureConsole() {
@@ -25,10 +28,7 @@ function captureConsole() {
     },
   });
 
-  const logger = new Console(out, err) as unknown as {
-    log: (...args: unknown[]) => void;
-    error: (...args: unknown[]) => void;
-  };
+  const logger = new Console(out, err);
 
   const stdout = () => outChunks.join('');
   const stderr = () => errChunks.join('');
@@ -36,71 +36,183 @@ function captureConsole() {
   return { logger, stdout, stderr };
 }
 
-const q = (s: string) => JSON.stringify(s);
+const node = process.execPath;
+const q = (s: string) => `'${s}'`;
 
-describe('runHostCmd (no mocks, full-stream asserts)', () => {
+describe('runLogged (real runner, full-stream asserts)', () => {
   it(
     'success: returns trimmed stdout and logs it',
-    withTempDir((cwd) => {
+    withTempDir(async (cwd) => {
       const { logger, stdout, stderr } = captureConsole();
-
       const code = 'console.log("hello"); console.log("");';
-      const cmd = `${process.execPath} -e ${q(code)}`;
 
-      const result = runHostCmd(cmd, cwd, logger);
+      const result = await runLogged(run, node, ['-e', code], { cwd }, logger);
 
       expect(result).toBe('hello');
-      expect(stdout()).toBe(`$ ${cmd}\nhello\n`);
+      expect(stdout()).toBe(`$ ${node} -e ${q(code)}\nhello\n`);
       expect(stderr()).toBe('');
     }),
   );
 
   it(
     'success with no output: logs "(no output)" and returns empty string',
-    withTempDir((cwd) => {
+    withTempDir(async (cwd) => {
       const { logger, stdout, stderr } = captureConsole();
 
-      const cmd = `${process.execPath} -e ${q('')}`;
-
-      const result = runHostCmd(cmd, cwd, logger);
+      const result = await runLogged(run, node, ['-e', ''], { cwd }, logger);
 
       expect(result).toBe('');
-      expect(stdout()).toBe(`$ ${cmd}\n(no output)\n`);
+      expect(stdout()).toBe(`$ ${node} -e ''\n(no output)\n`);
       expect(stderr()).toBe('');
     }),
   );
 
   it(
     'failure: logs command, stdout, stderr, and rethrows',
-    withTempDir((cwd) => {
+    withTempDir(async (cwd) => {
       const { logger, stdout, stderr } = captureConsole();
-
       const code =
         'process.stdout.write("out\\n");' +
         'process.stderr.write("err\\n");' +
         'process.exit(7);';
-      const cmd = `${process.execPath} -e ${q(code)}`;
 
-      let threw = false;
-      try {
-        runHostCmd(cmd, cwd, logger);
-      } catch {
-        threw = true;
-      }
-
-      expect(threw).toBe(true);
-      expect(stdout()).toBe(`$ ${cmd}\n`);
-
-      const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = new RegExp(
-        `^` +
-          `Command failed: ${escape(cmd)}\\n` +
-          `out\\n` +
-          `err\\n` +
-          `[\\s\\S]+` + // platform-specific execSync error message
-          `$`,
+      const failure = await runLogged(
+        run,
+        node,
+        ['-e', code],
+        { cwd },
+        logger,
+      ).then(
+        () => undefined,
+        (e: unknown) => e,
       );
-      expect(stderr()).toMatch(pattern);
+
+      expect(failure).toMatchObject({ status: 7 });
+      expect(stdout()).toBe(`$ ${node} -e ${q(code)}\n`);
+      expect(stderr()).toMatch(
+        new RegExp(
+          `^Command failed: ${node.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} -e [\\s\\S]*\\nout\\nerr\\n[\\s\\S]+$`,
+        ),
+      );
     }),
   );
+});
+
+describe('runLogged failure output that is only whitespace', () => {
+  it(
+    'logs whitespace-only stderr as captured',
+    withTempDir(async (cwd) => {
+      const { logger, stderr } = captureConsole();
+      const code = 'process.stderr.write("  \\n"); process.exit(3);';
+
+      await expect(
+        runLogged(run, node, ['-e', code], { cwd }, logger),
+      ).rejects.toThrow();
+      expect(stderr()).toContain('Command failed:');
+      expect(stderr()).toContain('  \n');
+    }),
+  );
+
+  it(
+    'logs nothing extra for empty stdout and stderr',
+    withTempDir(async (cwd) => {
+      const { logger, stderr } = captureConsole();
+
+      await expect(
+        runLogged(run, node, ['-e', 'process.exit(4);'], { cwd }, logger),
+      ).rejects.toThrow();
+      expect(stderr().startsWith('Command failed: ')).toBe(true);
+      expect(stderr().split('\n')[1]).toMatch(/^Command failed/);
+    }),
+  );
+});
+
+describe('runLogged credential redaction', () => {
+  const url = 'https://x-access-token:SECRET@github.com/o/r.git';
+
+  it(
+    'logs no line that contains a credential from stdout, stderr, the command or the message',
+    withTempDir(async (cwd) => {
+      const { logger, stdout, stderr } = captureConsole();
+      expect(
+        await runLogged(
+          run,
+          node,
+          ['-e', `console.log(${JSON.stringify(url)})`],
+          { cwd },
+          logger,
+        ),
+      ).toBe(url);
+
+      const fail = `console.error(${JSON.stringify(url)}); console.log(${JSON.stringify(url)}); process.exit(2); // ${url}`;
+      await expect(
+        runLogged(run, node, ['-e', fail], { cwd }, logger),
+      ).rejects.toThrow();
+
+      const logged = stdout() + stderr();
+      expect(logged).not.toContain('SECRET');
+      expect(logged).toContain('https://***@github.com/o/r.git');
+    }),
+  );
+
+  it(
+    'leaves URLs without credentials untouched',
+    withTempDir(async (cwd) => {
+      const { logger, stdout } = captureConsole();
+      await runLogged(
+        run,
+        node,
+        ['-e', 'console.log("https://github.com/o/r.git")'],
+        { cwd },
+        logger,
+      );
+      expect(stdout()).toContain('\nhttps://github.com/o/r.git\n');
+    }),
+  );
+
+  it(
+    'rethrows an error that carries no credential in its message, stdout or stderr',
+    withTempDir(async (cwd) => {
+      const { logger } = captureConsole();
+      const u = 'https://u:p@ss@host/x';
+      const code = `console.log(${JSON.stringify(u)}); console.error(${JSON.stringify(u)}); process.exit(3)`;
+      const failure = await runLogged(
+        run,
+        node,
+        ['-e', code],
+        { cwd },
+        logger,
+      ).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      expect(failure).toMatchObject({ status: 3 });
+      const text = JSON.stringify(failure, Object.getOwnPropertyNames(failure));
+      expect(text).not.toContain('ss@host');
+      expect(text).toContain('https://***@host/x');
+    }),
+  );
+});
+
+describe('redactError', () => {
+  it('redacts message, stdout and stderr and keeps code and status', () => {
+    const original = Object.assign(new Error('failed https://u:pw0rd@h/x'), {
+      code: 'E1',
+      status: 3,
+      stdout: 'out https://u:pw0rd@h/x',
+      stderr: 'err ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+    });
+    const copy = redactError(original);
+    expect(copy.message).toBe('failed https://***@h/x');
+    expect(copy).toMatchObject({
+      code: 'E1',
+      status: 3,
+      stdout: 'out https://***@h/x',
+      stderr: 'err ***',
+    });
+  });
+
+  it('wraps a thrown string', () => {
+    expect(redactError('https://u:pw0rd@h/x').message).toBe('https://***@h/x');
+  });
 });

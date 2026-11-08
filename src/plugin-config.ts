@@ -1,8 +1,11 @@
 // noinspection JSUnusedGlobalSymbols
-// @ts-expect-error semantic-release types are not bundled
-import { PluginConfig } from 'semantic-release';
+export interface HelmPluginConfig {
+  /**
+   * Unrecognised keys are tolerated, as they were when this type extended
+   * semantic-release's untyped `PluginConfig`.
+   */
+  [key: string]: unknown;
 
-export interface HelmPluginConfig extends PluginConfig {
   /**
    * Path to the chart directory that contains `Chart.yaml`.
    * Example: `"charts/app"`.
@@ -126,7 +129,7 @@ export class HelmConfig {
    * @returns A key-value map or `undefined`.
    */
   getTemplateValues(): Record<string, unknown> | undefined {
-    return this.cfg.templateValues;
+    return this.cfg.templateValues ?? undefined;
   }
 
   /**
@@ -180,7 +183,7 @@ export class HelmConfig {
    * @returns URL string or `undefined`.
    */
   getGhUrl(): string | undefined {
-    return this.cfg.ghPages?.url;
+    return this.cfg.ghPages?.url ?? undefined;
   }
 
   /**
@@ -216,7 +219,7 @@ export class HelmConfig {
    * @returns `oci://…` string or `undefined`.
    */
   getOciRepo(): string | undefined {
-    return this.cfg.ociRepo;
+    return this.cfg.ociRepo ?? undefined;
   }
 
   /**
@@ -297,23 +300,5 @@ export class HelmConfig {
     const port = this.getOciPort();
     if (!host) return undefined;
     return typeof port === 'number' ? `${host}:${port}` : host;
-  }
-
-  /**
-   * Optional `helm push` flag for plain HTTP when insecure is on.
-   *
-   * @returns `' --plain-http'` or an empty string.
-   */
-  getOciPlainHttpFlag(): string {
-    return this.getOciInsecure() ? ' --plain-http' : '';
-  }
-
-  /**
-   * Optional `helm registry login` flag for insecure mode.
-   *
-   * @returns `' --insecure'` or an empty string.
-   */
-  getOciInsecureLoginFlag(): string {
-    return this.getOciInsecure() ? ' --insecure' : '';
   }
 }

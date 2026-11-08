@@ -1,11 +1,29 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'yaml';
-import { HelmChart } from '../src/helm-chart.js';
-import { HelmIndex, ChartEntry, HelmIndexDoc } from '../src/helm-index.js';
+import { Chart } from '../src/chart.js';
+import { ChartPackage } from '../src/chart-package.js';
+import { ChartRepository, ChartEntry } from '../src/chart-repository.js';
+import { DockerImage } from '../src/docker.js';
+import { fakeRunner, recordingLogger } from './utils/runner.js';
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { withTempDir } from './utils/tmpdir.js';
 import { sha256OfFile } from './utils/filehash.js';
+
+/** A chart in a directory, with images that are never run. */
+function chartAt(dir: string): Chart {
+  const { run } = fakeRunner();
+  const { logger } = recordingLogger();
+  const image = new DockerImage({ image: 'unused', logger, cwd: dir, run });
+  return Chart.open({
+    directory: '',
+    cwd: dir,
+    logger,
+    run,
+    helm: image,
+    docs: image,
+  });
+}
 
 const FIXED_TIME = new Date('2001-01-02T03:04:05.000Z');
 const FIXED_ISO = FIXED_TIME.toISOString();
@@ -42,8 +60,14 @@ function writeTgz(
   return tgz;
 }
 
-function readIndex(idxPath: string): HelmIndexDoc {
-  return yaml.parse(fs.readFileSync(idxPath, 'utf8')) as HelmIndexDoc;
+interface ChartRepositoryDoc {
+  apiVersion: 'v1';
+  entries: Record<string, ChartEntry[]>;
+  generated?: string;
+}
+
+function readIndex(idxPath: string): ChartRepositoryDoc {
+  return yaml.parse(fs.readFileSync(idxPath, 'utf8')) as ChartRepositoryDoc;
 }
 
 beforeAll(() => {
@@ -55,7 +79,7 @@ afterAll(() => {
   jest.useRealTimers();
 });
 
-describe('HelmIndex', () => {
+describe('ChartRepository', () => {
   /**
    * Creates a new index file when none exists and ensures the minimal valid
    * structure is persisted with apiVersion v1 and empty entries map.
@@ -64,7 +88,7 @@ describe('HelmIndex', () => {
     'initializes empty index on first write',
     withTempDir((base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
-      HelmIndex.fromFile(idxPath).writeTo(idxPath);
+      ChartRepository.open(path.dirname(idxPath)).save();
       expect(readIndex(idxPath)).toEqual({ apiVersion: 'v1', entries: {} });
     }),
   );
@@ -77,19 +101,19 @@ describe('HelmIndex', () => {
     'appends versions and keeps newest first',
     withTempDir((base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
-      const c100 = HelmChart.from(writeChartYaml(base, 'dummy', '1.0.0'));
+      const c100 = chartAt(writeChartYaml(base, 'dummy', '1.0.0'));
       const t100 = writeTgz(base, 'dummy', '1.0.0', 'a');
-      HelmIndex.fromFile(idxPath)
-        .append(c100, t100, 'https://example.test/charts', {
+      ChartRepository.open(path.dirname(idxPath))
+        .add(c100, ChartPackage.at(t100), 'https://example.test/charts', {
           appVersion: '1.0.0',
         })
-        .writeTo(idxPath);
+        .save();
 
       const c110 = c100.withVersion('1.1.0');
       const t110 = writeTgz(base, 'dummy', '1.1.0', 'b');
-      HelmIndex.fromFile(idxPath)
-        .append(c110, t110, 'https://example.test/charts')
-        .writeTo(idxPath);
+      ChartRepository.open(path.dirname(idxPath))
+        .add(c110, ChartPackage.at(t110), 'https://example.test/charts')
+        .save();
 
       expect(readIndex(idxPath)).toEqual({
         apiVersion: 'v1',
@@ -129,17 +153,17 @@ describe('HelmIndex', () => {
     'replaces same version without duplication',
     withTempDir((base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
-      const chart = HelmChart.from(writeChartYaml(base, 'demo', '2.0.0'));
+      const chart = chartAt(writeChartYaml(base, 'demo', '2.0.0'));
 
       const t1 = writeTgz(base, 'demo', '2.0.0', 'first');
-      HelmIndex.fromFile(idxPath)
-        .append(chart, t1, 'https://u.test/charts')
-        .writeTo(idxPath);
+      ChartRepository.open(path.dirname(idxPath))
+        .add(chart, ChartPackage.at(t1), 'https://u.test/charts')
+        .save();
 
       const t2 = writeTgz(base, 'demo', '2.0.0', 'second');
-      HelmIndex.fromFile(idxPath)
-        .append(chart, t2, 'https://u.test/charts')
-        .writeTo(idxPath);
+      ChartRepository.open(path.dirname(idxPath))
+        .add(chart, ChartPackage.at(t2), 'https://u.test/charts')
+        .save();
 
       expect(readIndex(idxPath)).toEqual({
         apiVersion: 'v1',
@@ -169,17 +193,17 @@ describe('HelmIndex', () => {
     'sorts entries by semver descending',
     withTempDir((base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
-      const c100 = HelmChart.from(writeChartYaml(base, 'svc', '1.0.0'));
+      const c100 = chartAt(writeChartYaml(base, 'svc', '1.0.0'));
       const t100 = writeTgz(base, 'svc', '1.0.0', 'x');
-      HelmIndex.empty()
-        .append(c100, t100, 'https://ex.test/charts')
-        .writeTo(idxPath);
+      ChartRepository.open(path.dirname(idxPath))
+        .add(c100, ChartPackage.at(t100), 'https://ex.test/charts')
+        .save();
 
       const c200 = c100.withVersion('2.0.0');
       const t200 = writeTgz(base, 'svc', '2.0.0', 'y');
-      HelmIndex.fromFile(idxPath)
-        .append(c200, t200, 'https://ex.test/charts')
-        .writeTo(idxPath);
+      ChartRepository.open(path.dirname(idxPath))
+        .add(c200, ChartPackage.at(t200), 'https://ex.test/charts')
+        .save();
 
       expect(readIndex(idxPath)).toEqual({
         apiVersion: 'v1',
@@ -218,10 +242,12 @@ describe('HelmIndex', () => {
     'writes absolute or relative urls',
     withTempDir((base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
-      const chart = HelmChart.from(writeChartYaml(base, 'web', '3.1.4'));
+      const chart = chartAt(writeChartYaml(base, 'web', '3.1.4'));
       const tgz = writeTgz(base, 'web', '3.1.4', 'content');
 
-      HelmIndex.fromFile(idxPath).append(chart, tgz, '').writeTo(idxPath);
+      ChartRepository.open(path.dirname(idxPath))
+        .add(chart, ChartPackage.at(tgz), '')
+        .save();
       expect(readIndex(idxPath)).toEqual({
         apiVersion: 'v1',
         generated: FIXED_ISO,
@@ -240,13 +266,13 @@ describe('HelmIndex', () => {
         },
       });
 
-      HelmIndex.fromFile(idxPath)
-        .append(
+      ChartRepository.open(path.dirname(idxPath))
+        .add(
           chart.withVersion('3.1.5'),
-          writeTgz(base, 'web', '3.1.5', 'c'),
+          ChartPackage.at(writeTgz(base, 'web', '3.1.5', 'c')),
           'https://repo.test/charts',
         )
-        .writeTo(idxPath);
+        .save();
 
       const parsed = readIndex(idxPath);
       expect(parsed.entries.web[0]).toEqual({
@@ -271,7 +297,7 @@ describe('HelmIndex', () => {
     'passes metadata and coerces appVersion',
     withTempDir((base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
-      const chart = HelmChart.from(
+      const chart = chartAt(
         writeChartYaml(base, 'api', '0.9.0', {
           appVersion: 42,
           icon: 'https://i/icon.svg',
@@ -284,9 +310,9 @@ describe('HelmIndex', () => {
       );
       const tgz = writeTgz(base, 'api', '0.9.0', 'z');
 
-      HelmIndex.fromFile(idxPath)
-        .append(chart, tgz, 'https://r.test/c')
-        .writeTo(idxPath);
+      ChartRepository.open(path.dirname(idxPath))
+        .add(chart, ChartPackage.at(tgz), 'https://r.test/c')
+        .save();
 
       expect(readIndex(idxPath)).toEqual({
         apiVersion: 'v1',
@@ -323,7 +349,7 @@ describe('HelmIndex', () => {
     'denylists computed fields from override',
     withTempDir((base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
-      const chart = HelmChart.from(
+      const chart = chartAt(
         writeChartYaml(base, 'svc', '7.7.7', {
           urls: ['http://bad/url.tgz'],
           created: '1999-01-01T00:00:00.000Z',
@@ -332,9 +358,9 @@ describe('HelmIndex', () => {
       );
       const tgz = writeTgz(base, 'svc', '7.7.7', 'payload');
 
-      HelmIndex.fromFile(idxPath)
-        .append(chart, tgz, 'https://good/charts')
-        .writeTo(idxPath);
+      ChartRepository.open(path.dirname(idxPath))
+        .add(chart, ChartPackage.at(tgz), 'https://good/charts')
+        .save();
 
       expect(readIndex(idxPath)).toEqual({
         apiVersion: 'v1',
@@ -364,13 +390,15 @@ describe('HelmIndex', () => {
     'writes generated and stays idempotent',
     withTempDir((base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
-      const chart = HelmChart.from(writeChartYaml(base, 'clock', '1.0.0'));
+      const chart = chartAt(writeChartYaml(base, 'clock', '1.0.0'));
       const tgz = writeTgz(base, 'clock', '1.0.0', 't');
 
-      HelmIndex.fromFile(idxPath).append(chart, tgz, '').writeTo(idxPath);
+      ChartRepository.open(path.dirname(idxPath))
+        .add(chart, ChartPackage.at(tgz), '')
+        .save();
       const first = readIndex(idxPath);
 
-      HelmIndex.fromFile(idxPath).writeTo(idxPath);
+      ChartRepository.open(path.dirname(idxPath)).save();
       const second = readIndex(idxPath);
 
       expect(first).toEqual({
@@ -391,6 +419,195 @@ describe('HelmIndex', () => {
         },
       });
       expect(second).toEqual(first);
+    }),
+  );
+});
+
+describe('ChartRepository load, append and write of unusual index.yaml content', () => {
+  it(
+    'keeps unknown top-level keys, odd items and non-list chart keys through append',
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(
+        file,
+        yaml.stringify({
+          apiVersion: 'v9',
+          annotations: { team: 'platform' },
+          entries: {
+            other: [{ name: 'other', version: 2 }, 'junk', null],
+            nul: null,
+            mapping: { a: 1 },
+          },
+        }),
+        'utf8',
+      );
+      const chart = chartAt(writeChartYaml(base, 'demo', '1.0.0'));
+      const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
+      const out = path.join(base, 'index.yaml');
+      ChartRepository.open(path.dirname(file))
+        .add(chart, ChartPackage.at(tgz), '')
+        .save();
+      const doc = yaml.parse(fs.readFileSync(out, 'utf8'));
+      expect(doc.apiVersion).toBe('v1');
+      expect(doc.annotations).toEqual({ team: 'platform' });
+      expect(doc.entries.other).toEqual([
+        { name: 'other', version: 2 },
+        'junk',
+        null,
+      ]);
+      expect(doc.entries.nul).toBeNull();
+      expect(doc.entries.mapping).toEqual({ a: 1 });
+      expect(doc.entries.demo).toHaveLength(1);
+    }),
+  );
+
+  it.each([
+    ['a mapping', 'entries:\n  demo:\n    a: 1\n'],
+    ['a scalar', 'entries:\n  demo: nope\n'],
+  ])('refuses to append over a chart key that is %s', (_label, content) =>
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(file, content, 'utf8');
+      const chart = chartAt(writeChartYaml(base, 'demo', '1.0.0'));
+      const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
+      expect(() =>
+        ChartRepository.open(path.dirname(file)).add(
+          chart,
+          ChartPackage.at(tgz),
+          '',
+        ),
+      ).toThrow(expect.objectContaining({ code: 'EINVALIDINDEX' }));
+    })(),
+  );
+
+  it.each([
+    ['null', 'entries: null\n'],
+    ['absent', 'apiVersion: v1\n'],
+    ['a null chart key', 'entries:\n  demo: null\n'],
+  ])('treats %s as empty', (_label, content) =>
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(file, content, 'utf8');
+      const chart = chartAt(writeChartYaml(base, 'demo', '1.0.0'));
+      const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
+      const out = path.join(base, 'index.yaml');
+      ChartRepository.open(path.dirname(file))
+        .add(chart, ChartPackage.at(tgz), '')
+        .save();
+      expect(readIndex(out).entries.demo).toHaveLength(1);
+    })(),
+  );
+
+  it.each([
+    ['a list', 'entries:\n  - a\n'],
+    ['a string', 'entries: nope\n'],
+  ])('refuses an index whose entries is %s', (_label, content) =>
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(file, content, 'utf8');
+      expect(() => ChartRepository.open(path.dirname(file))).toThrow(
+        expect.objectContaining({ code: 'EINVALIDINDEX' }),
+      );
+    })(),
+  );
+
+  it(
+    'yields an empty index for an empty file',
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      const out = path.join(base, 'index.yaml');
+      fs.writeFileSync(file, '', 'utf8');
+      ChartRepository.open(path.dirname(file)).save();
+      expect(readIndex(out)).toEqual({ apiVersion: 'v1', entries: {} });
+    }),
+  );
+
+  it(
+    'refuses to replace an index that is not a mapping',
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(file, '- a\n- b\n', 'utf8');
+      expect(() => ChartRepository.open(path.dirname(file))).toThrow(
+        expect.objectContaining({ code: 'EINVALIDINDEX' }),
+      );
+    }),
+  );
+});
+
+describe('ChartRepository.append with unusual chart names', () => {
+  it(
+    'handles a chart named after an Object.prototype member',
+    withTempDir((base: string) => {
+      const chart = chartAt(writeChartYaml(base, 'constructor', '1.0.0'));
+      const tgz = writeTgz(base, 'constructor', '1.0.0', 'x');
+      const out = path.join(base, 'index.yaml');
+      ChartRepository.open(path.dirname(out))
+        .add(chart, ChartPackage.at(tgz), '')
+        .save();
+      const written = yaml.parse(fs.readFileSync(out, 'utf8'));
+      expect(
+        written.entries.constructor.map((e: ChartEntry) => e.version),
+      ).toEqual(['1.0.0']);
+    }),
+  );
+});
+
+describe('ChartRepository key order', () => {
+  it(
+    'writes apiVersion, entries, other keys, then generated',
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(
+        file,
+        'generated: old\nannotations:\n  a: b\nentries: {}\n',
+        'utf8',
+      );
+      const chart = chartAt(writeChartYaml(base, 'demo', '1.0.0'));
+      const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
+      const out = path.join(base, 'index.yaml');
+      ChartRepository.open(path.dirname(file))
+        .add(chart, ChartPackage.at(tgz), '')
+        .save();
+      expect(Object.keys(yaml.parse(fs.readFileSync(out, 'utf8')))).toEqual([
+        'apiVersion',
+        'entries',
+        'annotations',
+        'generated',
+      ]);
+    }),
+  );
+});
+
+describe('ChartRepository YAML handling', () => {
+  it(
+    'turns a YAML syntax error into a coded error that names the file',
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(file, 'a: 1\n---\nb: 2\n', 'utf8');
+      expect(() => ChartRepository.open(path.dirname(file))).toThrow(
+        expect.objectContaining({
+          code: 'EINVALIDINDEX',
+          details: expect.stringContaining('index.yaml'),
+        }),
+      );
+    }),
+  );
+
+  it(
+    'writes long descriptions on one line, like Chart.yaml',
+    withTempDir((base: string) => {
+      const description = 'word '.repeat(40).trim();
+      const chart = chartAt(
+        writeChartYaml(base, 'demo', '1.0.0', { description }),
+      );
+      const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
+      const out = path.join(base, 'index.yaml');
+      ChartRepository.open(path.dirname(out))
+        .add(chart, ChartPackage.at(tgz), '')
+        .save();
+      expect(fs.readFileSync(out, 'utf8')).toContain(
+        `description: ${description}\n`,
+      );
     }),
   );
 });

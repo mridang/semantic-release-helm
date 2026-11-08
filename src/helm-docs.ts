@@ -1,34 +1,4 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { DockerCliClient } from './docker/cli-client.js';
-import { DockerImage } from './docker/image.js';
-import type { DockerClient } from './docker/client.js';
-
-interface Logger {
-  log: (m: string) => void;
-  error: (m: string) => void;
-}
-
-/**
- * Public interface for README docs generation for a Helm chart.
- * Implementations may use Docker or a native binary.
- */
-interface HelmDocs {
-  /**
-   * Normalize README markers and generate docs for a chart.
-   *
-   * @param cwd Repo root.
-   * @param chartPath Path to chart directory (contains Chart.yaml).
-   * @param args Extra args for the docs tool (e.g., ["--template-files=README.md"]).
-   * @param logger Logger for structured output.
-   */
-  generate(
-    cwd: string,
-    chartPath: string,
-    args: string[],
-    logger: Logger,
-  ): Promise<void>;
-}
+import * as fs from 'node:fs';
 
 /**
  * Sentinels around the values table region. The inner content is
@@ -38,9 +8,7 @@ export const VALUES_TABLE_TEMPLATE = '{{ template "chart.valuesTable" . }}';
 const VALUES_TABLE_START_RE = /<!--\s*render\.chart\.valuesTable\s*-->/i;
 const VALUES_TABLE_END_RE = /<!--\s*end\.chart\.valuesTable\s*-->/i;
 const VALUES_TABLE_BLOCK_RE = new RegExp(
-  String(VALUES_TABLE_START_RE).slice(1, -2) +
-    '[\\s\\S]*?' +
-    String(VALUES_TABLE_END_RE).slice(1, -2),
+  VALUES_TABLE_START_RE.source + '[\\s\\S]*?' + VALUES_TABLE_END_RE.source,
   'gi',
 );
 
@@ -54,17 +22,15 @@ export function normalizeReadmeValuesTableContent(content: string): {
   updated: string;
   changed: boolean;
 } {
-  let changed = false;
   const updated = content.replace(VALUES_TABLE_BLOCK_RE, (block) => {
     const start =
       block.match(VALUES_TABLE_START_RE)?.[0] ??
       '<!-- render.chart.valuesTable -->';
     const end =
       block.match(VALUES_TABLE_END_RE)?.[0] ?? '<!-- end.chart.valuesTable -->';
-    changed = true;
     return `${start}\n${VALUES_TABLE_TEMPLATE}\n${end}`;
   });
-  return { updated, changed };
+  return { updated, changed: content.search(VALUES_TABLE_BLOCK_RE) !== -1 };
 }
 
 /**
@@ -78,44 +44,4 @@ export function normalizeReadmeValuesTableFile(absPath: string): {
   const { updated, changed } = normalizeReadmeValuesTableContent(original);
   if (changed) fs.writeFileSync(absPath, updated, 'utf8');
   return { changed };
-}
-
-interface DockerHelmDocsOptions {
-  image?: string;
-  client?: DockerClient;
-}
-
-/**
- * Docker-backed helm-docs implementation.
- */
-export class DockerHelmDocs implements HelmDocs {
-  private readonly image: string;
-  private readonly client: DockerClient;
-
-  constructor(opts: DockerHelmDocsOptions = {}) {
-    this.image = opts.image ?? 'jnorwood/helm-docs:v1.14.2';
-    this.client = opts.client ?? new DockerCliClient();
-  }
-
-  async generate(
-    cwd: string,
-    chartPath: string,
-    args: string[],
-    logger: Logger,
-  ): Promise<void> {
-    const readmePath = path.join(cwd, chartPath, 'README.md');
-    if (fs.existsSync(readmePath)) {
-      const { changed } = normalizeReadmeValuesTableFile(readmePath);
-      logger.log(
-        changed
-          ? 'helm-docs: normalized README valuesTable block(s)'
-          : 'helm-docs: README normalization not needed (no markers found)',
-      );
-    } else {
-      logger.log('helm-docs: README.md not found; skipping normalization');
-    }
-
-    const img = new DockerImage(this.image, cwd, logger, this.client);
-    await img.run(['helm-docs', `--chart-search-root=${chartPath}`, ...args]);
-  }
 }
