@@ -148,9 +148,47 @@ export class DockerCliClient implements DockerClient {
       opts.logger.log(stdout.length ? stdout : '(no output)');
       return { stdout, code: 0 };
     } catch (e) {
+      const names = Object.keys(opts.env ?? {});
+      if (names.length > 0) {
+        throw this.withheld(e, opts);
+      }
       const msg = isRecord(e) ? stringAt(e, 'message') : undefined;
       if (msg) opts.logger.error(msg);
       throw e;
     }
+  }
+
+  /**
+   * The error to report when a run that carried environment variables
+   * fails. The runtime can echo a value in its own message (for instance
+   * when it rejects a value containing a NUL byte), so a failure of the
+   * spawn itself is replaced by a fixed message naming the variables, and
+   * any other message has the values removed.
+   *
+   * @param error What the runner threw.
+   * @param opts The options of the failed run.
+   * @returns A sanitised error, already logged.
+   */
+  private withheld(error: unknown, opts: RunOptions): Error {
+    const env = opts.env ?? {};
+    const names = Object.keys(env).join(', ');
+    const code = isRecord(error) ? stringAt(error, 'code') : undefined;
+    const message = isRecord(error) ? (stringAt(error, 'message') ?? '') : '';
+    const scrubbed = Object.values(env)
+      .filter((value) => value.length > 0)
+      .reduce(
+        (text, value) =>
+          text
+            .split(value)
+            .join('***')
+            .split(JSON.stringify(value).slice(1, -1))
+            .join('***'),
+        message,
+      );
+    const safe = code?.startsWith('ERR_')
+      ? `Could not start docker with the environment variable(s) ${names}; the message is withheld because it may contain their values.`
+      : scrubbed;
+    if (safe) opts.logger.error(safe);
+    return new Error(safe);
   }
 }
