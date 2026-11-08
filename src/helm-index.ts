@@ -4,6 +4,7 @@ import * as crypto from 'node:crypto';
 import * as yaml from 'yaml';
 import { HelmChart } from './helm-chart.js';
 import SemanticReleaseError from '@semantic-release/error';
+import { messageOf } from './utils/error.js';
 import { isRecord } from './utils/object.js';
 
 /**
@@ -52,6 +53,27 @@ function passthroughAllExceptReserved(
 }
 
 /**
+ * Parse index.yaml text, turning a YAML syntax problem into a coded error
+ * that names the file.
+ *
+ * @param text index.yaml content.
+ * @param file Path of the file, for the message.
+ * @returns The parsed value, whatever its shape.
+ * @throws SemanticReleaseError (`EINVALIDINDEX`) when it does not parse.
+ */
+function parseIndex(text: string, file: string): unknown {
+  try {
+    return yaml.parse(text);
+  } catch (error) {
+    throw new SemanticReleaseError(
+      `${file} is not valid YAML.`,
+      'EINVALIDINDEX',
+      `${file}: ${messageOf(error)}`,
+    );
+  }
+}
+
+/**
  * The members of a document other than the named ones, in their order.
  *
  * @param doc The document.
@@ -72,33 +94,42 @@ function without(
  * Methods return new instances to make merges predictable in tests.
  */
 export class HelmIndex {
-  private readonly doc: Readonly<Record<string, unknown>>;
+  private readonly entries: Readonly<Record<string, unknown>>;
+
+  private readonly rest: Readonly<Record<string, unknown>>;
 
   /**
-   * @param doc The index document this instance wraps.
+   * @param entries The chart entries, kept as loaded.
+   * @param rest Every other member of the document, in order.
    */
-  private constructor(doc: Readonly<Record<string, unknown>>) {
-    this.doc = doc;
+  private constructor(
+    entries: Readonly<Record<string, unknown>>,
+    rest: Readonly<Record<string, unknown>>,
+  ) {
+    this.entries = entries;
+    this.rest = rest;
   }
 
   /**
    * Return an empty index with no entries.
    */
   static empty(): HelmIndex {
-    return new HelmIndex({ apiVersion: 'v1', entries: {} });
+    return new HelmIndex({}, {});
   }
 
   /**
    * Load an index from disk when present, otherwise create a fresh
-   * empty index. Missing sections are normalized for robustness.
+   * empty index. An absent or null `entries` means empty.
    *
    * @param indexPath Path to an index.yaml file.
+   * @throws SemanticReleaseError (`EINVALIDINDEX`) when the file is not valid
+   *   YAML, is not a mapping, or its `entries` is not a mapping.
    */
   static fromFile(indexPath: string): HelmIndex {
     if (!fs.existsSync(indexPath)) {
       return HelmIndex.empty();
     }
-    const parsed: unknown = yaml.parse(fs.readFileSync(indexPath, 'utf8'));
+    const parsed = parseIndex(fs.readFileSync(indexPath, 'utf8'), indexPath);
     if (parsed === null || parsed === undefined) {
       return HelmIndex.empty();
     }
@@ -117,11 +148,7 @@ export class HelmIndex {
         `Refusing to overwrite ${indexPath}; fix or remove it.`,
       );
     }
-    return new HelmIndex({
-      apiVersion: 'v1',
-      entries,
-      ...without(parsed, ['apiVersion', 'entries']),
-    });
+    return new HelmIndex(entries, without(parsed, ['apiVersion', 'entries']));
   }
 
   /**
@@ -164,8 +191,8 @@ export class HelmIndex {
     };
 
     const key = chart.name();
-    const previous: unknown = Object.hasOwn(this.currentEntries(), key)
-      ? this.currentEntries()[key]
+    const previous: unknown = Object.hasOwn(this.entries, key)
+      ? this.entries[key]
       : undefined;
     if (
       previous !== undefined &&
@@ -183,22 +210,10 @@ export class HelmIndex {
         !(isRecord(e) && String(e.version) === String(entry.version)),
     );
 
-    return new HelmIndex({
-      apiVersion: 'v1',
-      entries: { ...this.currentEntries(), [key]: [entry, ...kept] },
-      ...without(this.doc, ['apiVersion', 'entries', 'generated']),
-      generated: created,
-    });
-  }
-
-  /**
-   * The chart entries of the wrapped document, whatever they contain.
-   *
-   * @returns The `entries` mapping, or an empty one.
-   */
-  private currentEntries(): Readonly<Record<string, unknown>> {
-    const entries = this.doc.entries;
-    return isRecord(entries) ? entries : {};
+    return new HelmIndex(
+      { ...this.entries, [key]: [entry, ...kept] },
+      { ...without(this.rest, ['generated']), generated: created },
+    );
   }
 
   /**
@@ -209,6 +224,13 @@ export class HelmIndex {
    */
   writeTo(indexPath: string): void {
     fs.mkdirSync(path.dirname(indexPath), { recursive: true });
-    fs.writeFileSync(indexPath, yaml.stringify(this.doc), 'utf8');
+    fs.writeFileSync(
+      indexPath,
+      yaml.stringify(
+        { apiVersion: 'v1', entries: this.entries, ...this.rest },
+        { lineWidth: 0 },
+      ),
+      'utf8',
+    );
   }
 }

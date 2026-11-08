@@ -545,3 +545,35 @@ describe('HelmIndex key order', () => {
     }),
   );
 });
+
+describe('HelmIndex YAML handling', () => {
+  it(
+    'turns a YAML syntax error into a coded error that names the file',
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(file, 'a: 1\n---\nb: 2\n', 'utf8');
+      expect(() => HelmIndex.fromFile(file)).toThrow(
+        expect.objectContaining({
+          code: 'EINVALIDINDEX',
+          details: expect.stringContaining('index.yaml'),
+        }),
+      );
+    }),
+  );
+
+  it(
+    'writes long descriptions on one line, like Chart.yaml',
+    withTempDir((base: string) => {
+      const description = 'word '.repeat(40).trim();
+      const chart = HelmChart.from(
+        writeChartYaml(base, 'demo', '1.0.0', { description }),
+      );
+      const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
+      const out = path.join(base, 'out.yaml');
+      HelmIndex.empty().append(chart, tgz, '').writeTo(out);
+      expect(fs.readFileSync(out, 'utf8')).toContain(
+        `description: ${description}\n`,
+      );
+    }),
+  );
+});
