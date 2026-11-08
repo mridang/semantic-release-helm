@@ -1,33 +1,17 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { execSync } from 'node:child_process';
 import SemanticReleaseError from '@semantic-release/error';
 import type {
   PrepareContext,
   PublishContext,
   VerifyConditionsContext,
 } from 'semantic-release';
-import { HelmIndex } from './helm-index.js';
-import { HelmChart, setChartVersion } from './helm-chart.js';
-import { DockerCliClient } from './docker/cli-client.js';
+import { DockerClient } from './docker.js';
+import { GitClient } from './git.js';
+import { planGhPages, publishGhPages } from './gh-pages.js';
+import { setChartVersion } from './helm-chart.js';
+import { HelmClient } from './helm.js';
+import { HelmConfig, HelmPluginConfig } from './plugin-config.js';
 import { redactCredentials } from './utils/redact.js';
-import { quoteWord } from './utils/shell.js';
-import type { Logger } from './docker/client.js';
-import { DockerImage } from './docker/image.js';
-import { runHostCmd } from './command-runner.js';
-import {
-  HelmConfig,
-  HelmPluginConfig,
-  templateSetArgs,
-} from './plugin-config.js';
-import { DockerHelmDocs } from './helm-docs.js';
-import {
-  buildWorktreeAddCommand,
-  commitIfStaged,
-  isRemoteReachable,
-  releaseBase,
-} from './gh-pages.js';
-import { buildOciPublish } from './oci-publish.js';
 
 export type { ChartYaml } from './helm-chart.js';
 
@@ -35,68 +19,6 @@ export type { ChartYaml } from './helm-chart.js';
 const COMMIT_NAME = 'semantic-release-bot';
 /** Author email for the gh-pages commit when none is configured. */
 const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
-
-/**
- * Run a Docker image with the repository mounted at `/apps` and a given set of
- * CLI arguments. This builds a `docker run` invocation with a deterministic
- * host mapping and working directory, then delegates to `runHostCmd`.
- *
- * The container runs to completion and is automatically removed (`--rm`). The
- * function's purpose is to provide a small, audited surface for running Helm
- * and related tooling in a clean environment.
- *
- * @param image Docker image name, including tag.
- * @param args Arguments appended after the image in `docker run`.
- * @param cwd Host working directory, mounted to `/apps` in the container.
- * @param logger semantic-release logger used for structured logs.
- */
-async function runDockerCmd(
-  image: string,
-  args: readonly string[],
-  cwd: string,
-  logger: Logger,
-): Promise<void> {
-  const img = new DockerImage(image, cwd, logger, new DockerCliClient());
-  await img.run(args);
-}
-
-/**
- * Run a shell script inside a Docker container. This composes a `docker run`
- * command that sets `/bin/sh -lc <script>` as entrypoint, uses `/apps` as the
- * working directory, and mounts the repo as in `runDockerCmd`.
- *
- * The script is JSON-encoded to avoid quoting pitfalls on the host shell. The
- * function returns only after the container exits.
- *
- * @param image Docker image name, including tag.
- * @param script A POSIX shell one-liner to execute via `/bin/sh -lc`.
- * @param cwd Host working directory, mounted to `/apps` in the container.
- * @param logger semantic-release logger used for structured logs.
- * @param env Variables passed to the container by name, for secrets.
- */
-async function runDockerShell(
-  image: string,
-  script: string,
-  cwd: string,
-  logger: Logger,
-  env?: Readonly<Record<string, string>>,
-): Promise<void> {
-  const img = new DockerImage(image, cwd, logger, new DockerCliClient());
-  await img.shell(script, env);
-}
-
-/**
- * Pull a Docker image to ensure availability at runtime. On failure, this
- * converts the underlying error into a `SemanticReleaseError` so the failure
- * is reported with a stable code (`EIMAGEPULLFAILED`).
- *
- * @param image Docker image to pull.
- * @param logger semantic-release logger used for structured logs.
- * @throws SemanticReleaseError if the image cannot be pulled.
- */
-async function verifyDockerImage(image: string, logger: Logger): Promise<void> {
-  await new DockerCliClient().pull(image, logger);
-}
 
 /**
  * semantic-release `verifyConditions` step. Verifies that:
@@ -124,23 +46,16 @@ export async function verifyConditions(
 
   logger.log('verifyConditions: starting');
 
-  try {
-    runHostCmd('docker version', cwd, logger);
-  } catch {
-    throw new SemanticReleaseError(
-      'Docker not available.',
-      'ENODOCKER',
-      'Docker must be installed and on PATH.',
-    );
-  }
+  const docker = new DockerClient({ logger, cwd });
+  await docker.assertAvailable();
 
   const helmImage = cfg.getHelmImage();
   const docsImage = cfg.getDocsImage();
   logger.log(
     `verifyConditions: helmImage="${helmImage}", docsImage="${docsImage}"`,
   );
-  await verifyDockerImage(helmImage, logger);
-  await verifyDockerImage(docsImage, logger);
+  await docker.pull(helmImage);
+  await docker.pull(docsImage);
 
   const chartYamlPath = `${cwd}/${cfg.getChartPath()}/Chart.yaml`;
   if (!fs.existsSync(chartYamlPath)) {
@@ -165,47 +80,14 @@ export async function verifyConditions(
         `${url ?? '(none; index will be written without --url)'}`,
     );
 
-    try {
-      runHostCmd('git --version', cwd, logger);
-    } catch {
-      throw new SemanticReleaseError(
-        'Git not available for gh-pages publishing.',
-        'ENOGIT',
-        'Git must be installed and on PATH for gh-pages mode.',
-      );
-    }
-
-    try {
-      runHostCmd('git rev-parse --git-dir', cwd, logger);
-    } catch {
-      throw new SemanticReleaseError(
-        'Not in a git repository.',
-        'ENOTGITREPO',
-        'gh-pages mode requires running from within a git repository.',
-      );
-    }
-
-    try {
-      runHostCmd(`git remote get-url ${quoteWord(ghRepo)}`, cwd, logger);
-    } catch {
-      throw new SemanticReleaseError(
-        `Git remote "${redactCredentials(ghRepo)}" not found.`,
-        'ENOREMOTE',
-        `gh-pages mode requires a configured remote named "${redactCredentials(ghRepo)}".`,
-      );
-    }
-
-    if (isRemoteReachable(ghRepo, cwd)) {
-      logger.log(
-        `verifyConditions: remote "${redactCredentials(ghRepo)}" is accessible`,
-      );
-    } else {
-      throw new SemanticReleaseError(
-        `Cannot access remote repository "${redactCredentials(ghRepo)}".`,
-        'EREMOTEACCESS',
-        `Check git credentials and network connectivity to ${redactCredentials(ghRepo)}.`,
-      );
-    }
+    const git = new GitClient({ logger, cwd });
+    await git.assertAvailable();
+    await git.assertRepository();
+    await git.remoteUrl(ghRepo);
+    await git.assertReachable(ghRepo);
+    logger.log(
+      `verifyConditions: remote "${redactCredentials(ghRepo)}" is accessible`,
+    );
   }
 
   if (cfg.isOciEnabled()) {
@@ -277,25 +159,20 @@ export async function prepare(
   fs.writeFileSync(chartYamlPath, updatedYaml, 'utf8');
   logger.log(`prepare: updated Chart.yaml to version ${version}`);
 
-  const helmImage = cfg.getHelmImage();
-  await runDockerCmd(helmImage, ['lint', cfg.getChartPath()], cwd, logger);
-  await runDockerCmd(
-    helmImage,
-    [
-      'template',
-      'sr-check',
-      cfg.getChartPath(),
-      ...templateSetArgs(cfg.getTemplateValues()),
-    ],
-    cwd,
+  const docker = new DockerClient({ logger, cwd });
+  const helm = new HelmClient({
+    docker,
+    helmImage: cfg.getHelmImage(),
+    docsImage: cfg.getDocsImage(),
     logger,
-  );
+    cwd,
+  });
+  await helm.lint(cfg.getChartPath());
+  await helm.template(cfg.getChartPath(), cfg.getTemplateValues());
 
-  const helmDocs = new DockerHelmDocs({ image: cfg.getDocsImage() });
-  try {
-    await helmDocs.generate(cwd, cfg.getChartPath(), cfg.getDocsArgs(), logger);
+  if (await helm.docs(cfg.getChartPath(), cfg.getDocsArgs())) {
     logger.log('prepare: helm-docs succeeded');
-  } catch {
+  } else {
     logger.log(
       'prepare: helm-docs failed or missing; skipping docs generation',
     );
@@ -305,103 +182,10 @@ export async function prepare(
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
   }
-  await runDockerCmd(
-    helmImage,
-    ['package', cfg.getChartPath(), '--destination=dist/charts'],
-    cwd,
-    logger,
-  );
+  await helm.package(cfg.getChartPath(), 'dist/charts');
   logger.log('prepare: packaged chart(s) into dist/charts');
 
   logger.log('prepare: ok');
-}
-
-/**
- * Everything the gh-pages publish needs that can be checked before anything
- * irreversible happens: a clean temporary working tree on the gh-pages branch,
- * the existing index (loaded and validated), the chart (parsed) and the base
- * of the release links.
- */
-interface GhPagesPlan {
-  readonly ghBranch: string;
-  readonly ghRepo: string;
-  readonly tmpWorktree: string;
-  readonly indexPath: string;
-  readonly chart: HelmChart;
-  readonly repoBase: string | undefined;
-  readonly index: HelmIndex;
-}
-
-/**
- * Prepare the gh-pages publish: create the working tree, then load and
- * validate the existing index and the chart. It runs before the OCI push so
- * that a refusal (a malformed index or Chart.yaml) cannot leave a release
- * half published.
- *
- * @param cfg Plugin configuration.
- * @param context semantic-release context.
- * @param cwd Repository root.
- * @returns The plan used by the rest of the publish.
- * @throws SemanticReleaseError when the index or Chart.yaml is refused.
- */
-function planGhPages(
-  cfg: HelmConfig,
-  context: PublishContext,
-  cwd: string,
-): GhPagesPlan {
-  const { logger } = context;
-  const ghBranch = cfg.getGhBranch();
-  const ghRepo = cfg.getGhRepo();
-
-  const tmpWorktree = path.join(cwd, '.gh-pages-tmp');
-
-  try {
-    runHostCmd(
-      `git worktree remove ${quoteWord(tmpWorktree)} --force`,
-      cwd,
-      logger,
-    );
-  } catch {
-    logger.log('gh-pages cleanup: worktree not found (expected)');
-  }
-  fs.rmSync(tmpWorktree, { recursive: true, force: true });
-
-  try {
-    runHostCmd(
-      `git fetch ${quoteWord(ghRepo)} ${quoteWord(ghBranch)}`,
-      cwd,
-      logger,
-    );
-  } catch {
-    logger.log('gh-pages: branch does not exist remotely (will create)');
-  }
-
-  runHostCmd(
-    buildWorktreeAddCommand(tmpWorktree, ghRepo, ghBranch),
-    cwd,
-    logger,
-  );
-
-  fs.mkdirSync(tmpWorktree, { recursive: true });
-
-  const indexPath = path.join(tmpWorktree, 'index.yaml');
-  const chart = HelmChart.from(path.join(cwd, cfg.getChartPath()));
-
-  const remoteUrl = execSync(`git remote get-url ${quoteWord(ghRepo)}`, {
-    cwd,
-    encoding: 'utf8',
-  }).trim();
-  const repoBase = releaseBase(remoteUrl, context.options?.repositoryUrl);
-
-  return {
-    ghBranch,
-    ghRepo,
-    tmpWorktree,
-    indexPath,
-    chart,
-    repoBase,
-    index: HelmIndex.fromFile(indexPath),
-  };
 }
 
 /**
@@ -459,95 +243,60 @@ export async function publish(
   }
   logger.log(`publish: found ${files.length} packaged chart(s)`);
 
-  const ghPlan = cfg.isGhEnabled() ? planGhPages(cfg, context, cwd) : undefined;
+  const docker = new DockerClient({ logger, cwd });
+  const helm = new HelmClient({
+    docker,
+    helmImage: cfg.getHelmImage(),
+    docsImage: cfg.getDocsImage(),
+    logger,
+    cwd,
+  });
+  const git = new GitClient({ logger, cwd });
+
+  const ghPlan = cfg.isGhEnabled()
+    ? await planGhPages(git, logger, {
+        cwd,
+        chartPath: cfg.getChartPath(),
+        remote: cfg.getGhRepo(),
+        branch: cfg.getGhBranch(),
+        repositoryUrl: context.options?.repositoryUrl,
+      })
+    : undefined;
 
   if (cfg.isOciEnabled()) {
-    const helmImage = cfg.getHelmImage();
     const haveUser = cfg.hasOciUser();
     const havePass = cfg.hasOciPass();
+    const ociRepo = redactCredentials(cfg.getOciRepo() ?? '');
 
     logger.log(
-      `publish: OCI mode -> repo="${redactCredentials(cfg.getOciRepo() ?? '')}", ` +
+      `publish: OCI mode -> repo="${ociRepo}", ` +
         `insecure=${cfg.getOciInsecure()}, ` +
         `usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
 
-    const { script, env } = buildOciPublish({
+    await helm.pushToOci({
       hostPort: cfg.getOciHostPort(),
-      repo: cfg.getOciRepo(),
+      repo: cfg.getOciRepo() ?? '',
       insecure: cfg.getOciInsecure(),
       username: cfg.getOciUsername(),
       password: cfg.getOciPassword(),
       files,
     });
-    await runDockerShell(helmImage, script, cwd, logger, env);
 
     logger.log(
-      `{ "helm": { "pushed": ${files.length}, "repo": "${redactCredentials(cfg.getOciRepo() ?? '')}" } }`,
+      `{ "helm": { "pushed": ${files.length}, "repo": "${ociRepo}" } }`,
     );
   }
 
   if (ghPlan) {
-    const { ghBranch, ghRepo, tmpWorktree, indexPath, chart, repoBase } =
-      ghPlan;
-
-    const indexDoc = files.reduce((doc, tgz) => {
-      const abs = path.isAbsolute(tgz) ? tgz : path.join(cwd, tgz);
-      const filename = path.basename(abs);
-      const version = filename.match(/-(\d+\.\d+\.\d+)\.tgz$/)?.[1] || '0.0.0';
-      const releaseUrl = repoBase
-        ? `${repoBase}/releases/download/v${version}/${filename}`
-        : filename;
-
-      return doc.append(chart, abs, '', { urls: [releaseUrl] });
-    }, ghPlan.index);
-
-    indexDoc.writeTo(indexPath);
-
-    logger.log('gh-pages: running git status before add');
-    runHostCmd(
-      `git -C ${quoteWord(tmpWorktree)} status --untracked-files=all`,
+    await publishGhPages(git, logger, ghPlan, {
       cwd,
-      logger,
-    );
-
-    runHostCmd(`git -C ${quoteWord(tmpWorktree)} add .`, cwd, logger);
-
-    logger.log('gh-pages: running git status after add');
-    runHostCmd(`git -C ${quoteWord(tmpWorktree)} status`, cwd, logger);
-    logger.log('gh-pages: showing staged file diff');
-    runHostCmd(
-      `git -C ${quoteWord(tmpWorktree)} diff --staged --stat`,
-      cwd,
-      logger,
-    );
-
-    const gitAuthorName = process.env.GIT_AUTHOR_NAME || COMMIT_NAME;
-    const gitAuthorEmail = process.env.GIT_AUTHOR_EMAIL || COMMIT_EMAIL;
-
-    commitIfStaged(
-      tmpWorktree,
-      cwd,
-      'docs(charts): update Helm repo (merge index) [skip ci]',
-      { name: gitAuthorName, email: gitAuthorEmail },
-      logger,
-    );
-
-    runHostCmd(
-      `git -C ${quoteWord(tmpWorktree)} push ${quoteWord(ghRepo)} ${quoteWord(ghBranch)}`,
-      cwd,
-      logger,
-    );
-
-    try {
-      runHostCmd(
-        `git worktree remove ${quoteWord(tmpWorktree)} --force`,
-        cwd,
-        logger,
-      );
-    } catch {
-      logger.log('gh-pages worktree cleanup: already removed');
-    }
+      files,
+      author: {
+        name: process.env.GIT_AUTHOR_NAME || COMMIT_NAME,
+        email: process.env.GIT_AUTHOR_EMAIL || COMMIT_EMAIL,
+      },
+    });
 
     logger.log(
       '{ "helm": { "published": "gh-pages", "path": "dist/charts", ' +

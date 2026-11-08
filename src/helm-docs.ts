@@ -1,29 +1,4 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { DockerCliClient } from './docker/cli-client.js';
-import { DockerImage } from './docker/image.js';
-import type { DockerClient, Logger } from './docker/client.js';
-
-/**
- * Public interface for README docs generation for a Helm chart.
- * Implementations may use Docker or a native binary.
- */
-interface HelmDocs {
-  /**
-   * Normalize README markers and generate docs for a chart.
-   *
-   * @param cwd Repo root.
-   * @param chartPath Path to chart directory (contains Chart.yaml).
-   * @param args Extra args for the docs tool (e.g., ["--template-files=README.md"]).
-   * @param logger Logger for structured output.
-   */
-  generate(
-    cwd: string,
-    chartPath: string,
-    args: readonly string[],
-    logger: Logger,
-  ): Promise<void>;
-}
 
 /**
  * Sentinels around the values table region. The inner content is
@@ -69,44 +44,4 @@ export function normalizeReadmeValuesTableFile(absPath: string): {
   const { updated, changed } = normalizeReadmeValuesTableContent(original);
   if (changed) fs.writeFileSync(absPath, updated, 'utf8');
   return { changed };
-}
-
-interface DockerHelmDocsOptions {
-  image?: string;
-  client?: DockerClient;
-}
-
-/**
- * Docker-backed helm-docs implementation.
- */
-export class DockerHelmDocs implements HelmDocs {
-  private readonly image: string;
-  private readonly client: DockerClient;
-
-  constructor(opts: DockerHelmDocsOptions = {}) {
-    this.image = opts.image ?? 'jnorwood/helm-docs:v1.14.2';
-    this.client = opts.client ?? new DockerCliClient();
-  }
-
-  async generate(
-    cwd: string,
-    chartPath: string,
-    args: readonly string[],
-    logger: Logger,
-  ): Promise<void> {
-    const readmePath = path.join(cwd, chartPath, 'README.md');
-    if (fs.existsSync(readmePath)) {
-      const { changed } = normalizeReadmeValuesTableFile(readmePath);
-      logger.log(
-        changed
-          ? 'helm-docs: normalized README valuesTable block(s)'
-          : 'helm-docs: README normalization not needed (no markers found)',
-      );
-    } else {
-      logger.log('helm-docs: README.md not found; skipping normalization');
-    }
-
-    const img = new DockerImage(this.image, cwd, logger, this.client);
-    await img.run(['helm-docs', `--chart-search-root=${chartPath}`, ...args]);
-  }
 }

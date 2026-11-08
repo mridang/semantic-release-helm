@@ -1,69 +1,9 @@
-import { spawnSync } from 'node:child_process';
-import { runHostCmd } from './command-runner.js';
-import { quoteWord } from './utils/shell.js';
-import type { Logger } from './docker/client.js';
-
-/**
- * Whether the index of a git working tree holds changes that a commit would
- * record. This asks git through its exit status (`git diff --cached --quiet`
- * exits 1 when changes are staged), so it does not depend on the wording of
- * any git message.
- *
- * @param worktree Path of the working tree.
- * @returns True when something is staged.
- * @throws Error when git cannot be run or fails for another reason.
- */
-export function hasStagedChanges(worktree: string): boolean {
-  const result = spawnSync('git', [
-    '-C',
-    worktree,
-    'diff',
-    '--cached',
-    '--quiet',
-  ]);
-  if (result.error) {
-    throw result.error;
-  }
-  if (result.status === 0) {
-    return false;
-  }
-  if (result.status === 1) {
-    return true;
-  }
-  throw new Error(
-    `git diff --cached failed with status ${result.status}: ${result.stderr.toString('utf8').trim()}`,
-  );
-}
-
-/**
- * Commit whatever is staged in a working tree, or log and do nothing when
- * nothing is staged. Author values are shell-quoted.
- *
- * @param worktree Path of the working tree.
- * @param cwd Directory the commands run in.
- * @param message Commit message.
- * @param author Author name and email.
- * @param logger Logger for the commands and the skip notice.
- * @returns True when a commit was created.
- */
-export function commitIfStaged(
-  worktree: string,
-  cwd: string,
-  message: string,
-  author: { readonly name: string; readonly email: string },
-  logger: Logger,
-): boolean {
-  if (!hasStagedChanges(worktree)) {
-    logger.log('gh-pages: no changes to commit');
-    return false;
-  }
-  runHostCmd(
-    `git -C ${quoteWord(worktree)} -c ${quoteWord(`user.name=${author.name}`)} -c ${quoteWord(`user.email=${author.email}`)} commit ${quoteWord(`--message=${message}`)}`,
-    cwd,
-    logger,
-  );
-  return true;
-}
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type { Logger } from './command-runner.js';
+import type { GitAuthor, GitClient } from './git.js';
+import { HelmChart } from './helm-chart.js';
+import { HelmIndex } from './helm-index.js';
 
 /**
  * A dotted host name or an IPv4 address. A scp-style remote whose host is
@@ -173,51 +113,122 @@ export function releaseBase(
 }
 
 /**
- * Build the shell command that creates the temporary gh-pages working tree.
- * It prefers the remote branch, then an existing local branch, then a fresh
- * orphan branch. Every dynamic value is shell-quoted.
- *
- * @param worktree Path of the working tree to create.
- * @param remote Git remote name.
- * @param branch Branch name.
- * @returns A command line for `sh`.
+ * Everything the gh-pages publish needs that can be checked before anything
+ * irreversible happens: a clean temporary working tree on the gh-pages branch,
+ * the existing index (loaded and validated), the chart (parsed) and the base
+ * of the release links.
  */
-export function buildWorktreeAddCommand(
-  worktree: string,
-  remote: string,
-  branch: string,
-): string {
-  const wt = quoteWord(worktree);
-  const br = quoteWord(branch);
-  const refRemoteCheck = `git show-ref --verify --quiet ${quoteWord(`refs/remotes/${remote}/${branch}`)}`;
-  const addFromRemote = `git worktree add ${wt} -B ${br} ${quoteWord(`${remote}/${branch}`)}`;
-  const refCheck = `git show-ref --verify --quiet ${quoteWord(`refs/heads/${branch}`)}`;
-  const addExisting = `git worktree add ${wt} ${br}`;
-  const addOrphan = [
-    `git worktree add --detach ${wt}`,
-    `git -C ${wt} switch --orphan ${br}`,
-    `git -C ${wt} reset --hard`,
-  ].join(' && ');
-  return (
-    `${refRemoteCheck} && (${addFromRemote}) || ` +
-    `(${refCheck} && (${addExisting}) || (${addOrphan}))`
-  );
+export interface GhPagesPlan {
+  readonly remote: string;
+  readonly branch: string;
+  readonly worktree: string;
+  readonly indexPath: string;
+  readonly chart: HelmChart;
+  readonly releaseBase: string | undefined;
+  readonly index: HelmIndex;
 }
 
 /**
- * Whether a git remote can be reached with the current credentials. Only the
- * exit status of `git ls-remote --heads` is used and its output is discarded,
- * so a remote with a very large number of branches cannot overflow a buffer.
+ * Prepare the gh-pages publish: create the working tree, then load and
+ * validate the existing index and the chart. It runs before the OCI push so
+ * that a refusal (a malformed index or Chart.yaml) cannot leave a release
+ * half published.
  *
- * @param remote Remote name or URL.
- * @param cwd Directory to run git in.
- * @returns True when git exits successfully.
+ * @param git Git client.
+ * @param logger Receives progress messages.
+ * @param settings Repository root, chart directory (relative), remote,
+ *   branch, and the repository URL semantic-release was configured with.
+ * @returns The plan used by the rest of the publish.
+ * @throws SemanticReleaseError when the index or Chart.yaml is refused.
  */
-export function isRemoteReachable(remote: string, cwd: string): boolean {
-  return (
-    spawnSync('git', ['ls-remote', '--heads', remote], {
-      cwd,
-      stdio: 'ignore',
-    }).status === 0
+export async function planGhPages(
+  git: GitClient,
+  logger: Logger,
+  settings: {
+    readonly cwd: string;
+    readonly chartPath: string;
+    readonly remote: string;
+    readonly branch: string;
+    readonly repositoryUrl: string | undefined;
+  },
+): Promise<GhPagesPlan> {
+  const { cwd, chartPath, remote, branch, repositoryUrl } = settings;
+  const worktree = path.join(cwd, '.gh-pages-tmp');
+
+  if (!(await git.removeWorktree(worktree))) {
+    logger.log('gh-pages cleanup: worktree not found (expected)');
+  }
+  fs.rmSync(worktree, { recursive: true, force: true });
+
+  if (!(await git.fetchBranch(remote, branch))) {
+    logger.log('gh-pages: branch does not exist remotely (will create)');
+  }
+  await git.addWorktree(worktree, remote, branch);
+  fs.mkdirSync(worktree, { recursive: true });
+
+  const indexPath = path.join(worktree, 'index.yaml');
+  const chart = HelmChart.from(path.join(cwd, chartPath));
+  return {
+    remote,
+    branch,
+    worktree,
+    indexPath,
+    chart,
+    releaseBase: releaseBase(await git.remoteUrl(remote), repositoryUrl),
+    index: HelmIndex.fromFile(indexPath),
+  };
+}
+
+/**
+ * Add the packaged charts to the index, commit it on the gh-pages branch,
+ * push, and remove the temporary working tree.
+ *
+ * @param git Git client.
+ * @param logger Receives progress messages.
+ * @param plan The plan made before publishing.
+ * @param settings Repository root, the packaged charts (relative to it) and
+ *   the commit author.
+ */
+export async function publishGhPages(
+  git: GitClient,
+  logger: Logger,
+  plan: GhPagesPlan,
+  settings: {
+    readonly cwd: string;
+    readonly files: readonly string[];
+    readonly author: GitAuthor;
+  },
+): Promise<void> {
+  const { cwd, files, author } = settings;
+  const indexDoc = files.reduce((doc, tgz) => {
+    const abs = path.isAbsolute(tgz) ? tgz : path.join(cwd, tgz);
+    const filename = path.basename(abs);
+    const version = filename.match(/-(\d+\.\d+\.\d+)\.tgz$/)?.[1] || '0.0.0';
+    const releaseUrl = plan.releaseBase
+      ? `${plan.releaseBase}/releases/download/v${version}/${filename}`
+      : filename;
+
+    return doc.append(plan.chart, abs, '', { urls: [releaseUrl] });
+  }, plan.index);
+
+  indexDoc.writeTo(plan.indexPath);
+
+  logger.log('gh-pages: running git status before add');
+  await git.status(plan.worktree, true);
+  await git.stageAll(plan.worktree);
+  logger.log('gh-pages: running git status after add');
+  await git.status(plan.worktree);
+  logger.log('gh-pages: showing staged file diff');
+  await git.stagedSummary(plan.worktree);
+
+  await git.commitStaged(
+    plan.worktree,
+    'docs(charts): update Helm repo (merge index) [skip ci]',
+    author,
   );
+  await git.push(plan.worktree, plan.remote, plan.branch);
+
+  if (!(await git.removeWorktree(plan.worktree))) {
+    logger.log('gh-pages worktree cleanup: already removed');
+  }
 }

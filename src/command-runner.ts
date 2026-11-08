@@ -1,14 +1,16 @@
-// src/command-runner.ts
-import { execSync } from 'node:child_process';
-import type { Logger } from './docker/client.js';
-import { isRecord, stringAt } from './utils/object.js';
 import { redactCredentials, redactError } from './utils/redact.js';
+import { isRecord, stringAt } from './utils/object.js';
+import type { ExecOptions, Runner } from './utils/exec.js';
+import { quoteWord } from './utils/shell.js';
 
 /**
- * Largest output captured from a command, 64 MiB, so a long listing is
- * not mistaken for a failure.
+ * The two logging methods the plugin uses. semantic-release's logger
+ * satisfies this, and so does a plain object in tests.
  */
-const MAX_BUFFER = 64 * 1024 * 1024;
+export interface Logger {
+  readonly log: (message: string) => void;
+  readonly error: (message: string) => void;
+}
 
 /**
  * Log captured output when it has content: trimmed if that leaves text,
@@ -20,59 +22,55 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 function logCaptured(text: string, logger: Logger): void {
   const trimmed = text.trim();
   if (trimmed.length > 0) {
-    logger.error(redactCredentials(trimmed));
+    logger.error(trimmed);
   } else if (text.length > 0) {
     logger.error(text);
   }
 }
 
 /**
- * Execute a host command and return its trimmed stdout. All interactions are
- * logged to the provided semantic-release logger. If the command produces no
- * stdout, "(no output)" is logged for traceability.
+ * Run a program through a runner and log what happens: the command line
+ * first, then its output, or "(no output)". On failure the failing command
+ * line, the captured output and the message are logged and the error is
+ * rethrown. Credentials are redacted from everything that is logged and from
+ * the rethrown error. The function knows nothing about what is being run.
  *
- * On failure, the function logs the failing command, tries to log captured
- * stdout and stderr from the thrown error object, and rethrows the original
- * error to preserve the exit semantics. The command is executed with stdio
- * "pipe" and UTF-8 decoding so that stdout can be captured and returned to
- * callers. The working directory is set to the repository root. Credentials
- * embedded in URLs are redacted from everything that is logged.
- *
- * @param cmd Shell command to execute.
- * @param cwd Working directory for the command.
- * @param logger semantic-release logger used for structured logs.
- * @returns Trimmed stdout of the command.
- * @throws The error thrown by execSync, with credentials redacted from its
- *   message, stdout and stderr, after it has been logged.
+ * @param run The runner that executes the program.
+ * @param file Program to run.
+ * @param args Its arguments.
+ * @param options Working directory and extra environment.
+ * @param logger Receives the structured log lines.
+ * @param sanitize Turns a failure into the error that is logged and thrown;
+ *   defaults to redacting credentials, and a caller that passes secrets in
+ *   the environment supplies one that also removes their values.
+ * @returns Trimmed standard output.
+ * @throws The sanitised error from the runner.
  */
-export function runHostCmd(cmd: string, cwd: string, logger: Logger): string {
-  logger.log(`$ ${redactCredentials(cmd)}`);
+export async function runLogged(
+  run: Runner,
+  file: string,
+  args: readonly string[],
+  options: ExecOptions,
+  logger: Logger,
+  sanitize: (error: unknown) => Error = redactError,
+): Promise<string> {
+  const display = redactCredentials([file, ...args].map(quoteWord).join(' '));
+  logger.log(`$ ${display}`);
 
   try {
-    const out = execSync(cmd, {
-      cwd,
-      stdio: 'pipe',
-      encoding: 'utf8',
-      maxBuffer: MAX_BUFFER,
-    });
-    const trimmed = out.trim();
-
+    const trimmed = (await run(file, args, options)).trim();
     logger.log(trimmed.length > 0 ? redactCredentials(trimmed) : '(no output)');
-
     return trimmed;
-  } catch (err: unknown) {
-    logger.error(`Command failed: ${redactCredentials(cmd)}`);
-
-    if (isRecord(err)) {
-      logCaptured(stringAt(err, 'stdout') ?? '', logger);
-      logCaptured(stringAt(err, 'stderr') ?? '', logger);
-
-      const message = stringAt(err, 'message');
-      if (message !== undefined && message.length > 0) {
-        logger.error(redactCredentials(message));
+  } catch (error: unknown) {
+    const safe = sanitize(error);
+    logger.error(`Command failed: ${display}`);
+    if (isRecord(safe)) {
+      logCaptured(redactCredentials(stringAt(safe, 'stdout') ?? ''), logger);
+      logCaptured(redactCredentials(stringAt(safe, 'stderr') ?? ''), logger);
+      if (safe.message) {
+        logger.error(redactCredentials(String(safe.message)));
       }
     }
-
-    throw redactError(err);
+    throw safe;
   }
 }
