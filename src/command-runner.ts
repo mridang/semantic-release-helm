@@ -4,20 +4,6 @@ import type { Logger } from './docker/client.js';
 import { isRecord, stringAt } from './utils/object.js';
 
 /**
- * Decode captured process output, which `execSync` attaches to its error as
- * a string or a Buffer.
- *
- * @param value The `stdout` or `stderr` property of the error.
- * @returns The text, or an empty string when there is none.
- */
-function textOf(value: unknown): string {
-  if (typeof value === 'string') {
-    return value;
-  }
-  return Buffer.isBuffer(value) ? value.toString('utf8') : '';
-}
-
-/**
  * Log captured output when it has content: trimmed if that leaves text,
  * otherwise as captured.
  *
@@ -64,8 +50,8 @@ export function runHostCmd(cmd: string, cwd: string, logger: Logger): string {
     logger.error(`Command failed: ${cmd}`);
 
     if (isRecord(err)) {
-      logCaptured(textOf(err.stdout), logger);
-      logCaptured(textOf(err.stderr), logger);
+      logCaptured(stringAt(err, 'stdout') ?? '', logger);
+      logCaptured(stringAt(err, 'stderr') ?? '', logger);
 
       const message = stringAt(err, 'message');
       if (message !== undefined && message.length > 0) {

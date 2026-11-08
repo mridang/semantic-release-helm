@@ -8,10 +8,9 @@ import { isRecord } from './utils/object.js';
 /**
  * Entry schema for a single chart version inside an index. The type
  * is intentionally permissive to remain forward compatible with new
- * Helm metadata. Tests rely on the version field being present.
+ * Helm metadata, and entries already in an index are kept verbatim.
  */
 export interface ChartEntry {
-  version: string;
   [key: string]: unknown;
 }
 
@@ -25,6 +24,10 @@ export interface HelmIndexDoc {
   generated?: string;
 }
 
+/**
+ * Chart.yaml keys the index writer computes itself, so they are never copied
+ * through from the chart.
+ */
 const RESERVED_KEYS: ReadonlySet<string> = new Set([
   'name',
   'version',
@@ -57,8 +60,9 @@ function passthroughAllExceptReserved(
 }
 
 /**
- * Read the entries of a parsed index.yaml. Anything that is not a list of
- * objects with a string or numeric version is dropped.
+ * Read the entries of a parsed index.yaml. Entries are kept verbatim so a
+ * rewrite never loses data; only items that are not objects are dropped, and
+ * chart keys whose value is not a list.
  *
  * @param parsed The parsed document.
  * @returns A map of chart name to its entries.
@@ -68,19 +72,7 @@ function entriesOf(parsed: unknown): Record<string, ChartEntry[]> {
     isRecord(parsed) && isRecord(parsed.entries) ? parsed.entries : {};
   return Object.fromEntries(
     Object.entries(raw).flatMap(([name, list]) =>
-      Array.isArray(list)
-        ? [
-            [
-              name,
-              list.flatMap((e: unknown) =>
-                isRecord(e) &&
-                (typeof e.version === 'string' || typeof e.version === 'number')
-                  ? [{ ...e, version: String(e.version) }]
-                  : [],
-              ),
-            ],
-          ]
-        : [],
+      Array.isArray(list) ? [[name, list.filter(isRecord)]] : [],
     ),
   );
 }
@@ -92,6 +84,9 @@ function entriesOf(parsed: unknown): Record<string, ChartEntry[]> {
 export class HelmIndex {
   private readonly doc: HelmIndexDoc;
 
+  /**
+   * @param doc The index document this instance wraps.
+   */
   private constructor(doc: HelmIndexDoc) {
     this.doc = doc;
   }
@@ -161,9 +156,9 @@ export class HelmIndex {
     };
 
     const key = chart.name();
-    const kept = (this.doc.entries[key] ?? []).filter(
-      (e) => String(e.version) !== String(entry.version),
-    );
+    const kept = (
+      Object.hasOwn(this.doc.entries, key) ? (this.doc.entries[key] ?? []) : []
+    ).filter((e) => String(e.version) !== String(entry.version));
 
     return new HelmIndex({
       apiVersion: 'v1',

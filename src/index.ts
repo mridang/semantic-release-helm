@@ -18,6 +18,8 @@ import { DockerHelmDocs } from './helm-docs.js';
 import { messageOf } from './utils/error.js';
 import { flattenRecord } from './utils/object.js';
 
+export type { ChartYaml } from './helm-chart.js';
+
 const COMMIT_NAME = 'semantic-release-bot';
 const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
 
@@ -78,19 +80,7 @@ async function runDockerShell(
  * @throws SemanticReleaseError if the image cannot be pulled.
  */
 async function verifyDockerImage(image: string, logger: Logger): Promise<void> {
-  const client = new DockerCliClient();
-  try {
-    await client.pull(image, logger);
-  } catch (err: unknown) {
-    if (err instanceof SemanticReleaseError) {
-      throw err;
-    }
-    throw new SemanticReleaseError(
-      `Failed to pull Docker image: ${image}`,
-      'EIMAGEPULLFAILED',
-      messageOf(err),
-    );
-  }
+  await new DockerCliClient().pull(image, logger);
 }
 
 /**

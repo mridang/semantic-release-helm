@@ -397,7 +397,7 @@ describe('HelmIndex', () => {
 
 describe('HelmIndex.fromFile with unusual index.yaml content', () => {
   it(
-    'keeps well-formed entries and drops malformed ones',
+    'keeps existing entries verbatim and drops non-object items and non-lists',
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
       fs.writeFileSync(
@@ -419,8 +419,8 @@ describe('HelmIndex.fromFile with unusual index.yaml content', () => {
         apiVersion: 'v1',
         generated: 'then',
         entries: {
-          good: [{ name: 'good', version: '1.0.0' }],
-          numeric: [{ name: 'numeric', version: '2' }],
+          good: [{ name: 'good', version: '1.0.0' }, { name: 'x' }],
+          numeric: [{ name: 'numeric', version: 2 }],
         },
       });
     }),
@@ -437,6 +437,23 @@ describe('HelmIndex.fromFile with unusual index.yaml content', () => {
       fs.writeFileSync(file, '- a\n', 'utf8');
       HelmIndex.fromFile(file).writeTo(out);
       expect(readIndex(out)).toEqual({ apiVersion: 'v1', entries: {} });
+    }),
+  );
+});
+
+describe('HelmIndex.append with unusual chart names', () => {
+  it(
+    'handles a chart named after an Object.prototype member',
+    withTempDir((base: string) => {
+      const chart = HelmChart.from(
+        writeChartYaml(base, 'constructor', '1.0.0'),
+      );
+      const tgz = writeTgz(base, 'constructor', '1.0.0', 'x');
+      const out = path.join(base, 'index.yaml');
+      HelmIndex.empty().append(chart, tgz, '').writeTo(out);
+      expect(readIndex(out).entries.constructor?.map((e) => e.version)).toEqual(
+        ['1.0.0'],
+      );
     }),
   );
 });

@@ -153,19 +153,21 @@ describe('HelmChart.from with unusual Chart.yaml content', () => {
     }),
   );
 
-  it(
-    'treats an empty or non-mapping file as an empty chart',
+  it.each([
+    ['an empty file', ''],
+    ['a non-mapping file', '- a\n- b\n'],
+  ])('treats %s as an empty chart', (_label, content) =>
     withTempDir((base: string) => {
       const dir = path.join(base, 'empty');
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, 'Chart.yaml'), '- a\n- b\n', 'utf8');
+      fs.writeFileSync(path.join(dir, 'Chart.yaml'), content, 'utf8');
       const chart = HelmChart.from(dir);
       expect({
         name: chart.name(),
         version: chart.version(),
         apiVersion: chart.apiVersion(),
       }).toEqual({ name: '', version: undefined, apiVersion: undefined });
-    }),
+    })(),
   );
 });
 
