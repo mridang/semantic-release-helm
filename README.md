@@ -80,8 +80,8 @@ module.exports = {
         ociInsecure: false,
         helmImage: 'alpine/helm:3.15.2',
         docsImage: 'jnorwood/helm-docs:v1.14.2',
-        docsArgs: ['--template-files', 'README.md'],
-        githubPages: true,
+        docsArgs: ['--template-files=README.md'],
+        ghPages: { enabled: true },
       },
     ],
     '@semantic-release/release-notes-generator',
@@ -115,11 +115,15 @@ All options are case-sensitive and lowercased in the JSON configuration.
   When configured, the packaged chart will be pushed to this repository.
 
 - **`ociUsername` (string, optional):**
-  Username for authenticating with the OCI registry. If not provided,
-  anonymous push will be attempted (not recommended).
+  Username for authenticating with the OCI registry. If not provided, the
+  `OCI_USERNAME` environment variable is used; with neither, anonymous push
+  will be attempted (not recommended).
 
 - **`ociPassword` (string, optional):**
-  Password or token for authenticating with the OCI registry.
+  Password or token for authenticating with the OCI registry. If not
+  provided, the `OCI_PASSWORD` environment variable is used. Give both a
+  username and a password, or neither. The password is passed to the
+  container through its environment and never appears in logs.
 
 - **`ociInsecure` (boolean, optional):**
   If `true`, allows pushing to insecure HTTP registries. Default: `false`.
@@ -134,11 +138,15 @@ All options are case-sensitive and lowercased in the JSON configuration.
 
 - **`docsArgs` (array of strings, optional):**
   Additional arguments for helm-docs. Default:
-  `['--template-files', 'README.md']`.
+  `['--template-files=README.md']`.
 
-- **`githubPages` (boolean, optional):**
-  If `true`, the packaged chart will also be pushed to the `gh-pages` branch
-  of the repository, making it available as a Helm chart repo over GitHub Pages.
+- **`ghPages` (object, optional):**
+  Publishing to the `gh-pages` branch is on by default; set
+  `ghPages: { enabled: false }` to turn it off. The members are:
+  `enabled` (default `true`), `url` (public base URL written into the index
+  entries; when omitted, GitHub release links are used where they can be
+  derived from the remote), `repo` (git remote to push to, default `origin`)
+  and `branch` (default `gh-pages`).
 
 ## OCI Registry Publishing
 
@@ -150,7 +158,7 @@ Amazon ECR, or Docker Hub (if they support OCI artifacts).
 
 ## GitHub Pages Publishing
 
-If `githubPages` is enabled, the plugin will push the packaged chart to the
+Unless `ghPages.enabled` is `false`, the plugin will push the packaged chart to the
 `gh-pages` branch of the repository. This is useful if you want to host
 your Helm charts via GitHub Pages as a traditional Helm chart repository.
 Consumers can then add your repo with:
@@ -158,6 +166,27 @@ Consumers can then add your repo with:
 ```sh
 helm repo add my-org https://my-org.github.io/my-repo/
 ```
+
+## Errors
+
+The plugin refuses to continue, with a stable error code, when something is
+wrong before a release is half done:
+
+- `ENODOCKER`, `EIMAGEPULLFAILED`: Docker is missing or an image cannot be
+  pulled.
+- `EMISSINGCHARTYAML`: there is no `Chart.yaml` at `chartPath`.
+- `EINVALIDCHARTYAML`: `Chart.yaml` is not valid YAML, is not a mapping, has a
+  version that cannot be edited safely (a block scalar, or an anchor that an
+  alias points to), or holds several documents. This is checked in
+  `verifyConditions`.
+- `EINVALIDINDEX`: the `index.yaml` on the `gh-pages` branch is not valid YAML,
+  is not a mapping, or has `entries` that are not in the expected shape. It is
+  checked before anything is pushed, and the file is never overwritten.
+- `ENOGIT`, `ENOTGITREPO`, `ENOREMOTE`, `EREMOTEACCESS`: git, the repository,
+  the remote or access to it is not usable for `gh-pages` publishing.
+- `EOCICREDSINCOMPLETE`: only one of the OCI username and password is set.
+- `ENOVERSION`, `ENOPACKAGEDCHART`: semantic-release gave no next version, or
+  `prepare` did not package the chart.
 
 ## Known Issues
 
