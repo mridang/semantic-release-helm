@@ -15,6 +15,9 @@ import type {
 /**
  * Build a docker pull command string for a given image. The command
  * is deterministic and suitable for logging and testing.
+ *
+ * @param image Image reference.
+ * @returns The command line.
  */
 export function buildDockerPull(image: string): string {
   return `docker pull ${quoteWord(image)}`;
@@ -27,6 +30,12 @@ export function buildDockerPull(image: string): string {
  * shell-quoted, so spaces and metacharacters in paths, the image or flags
  * cannot split or inject commands. Environment variables are named only
  * (`--env=NAME`), so their values never appear in the command line.
+ *
+ * @param image Image reference.
+ * @param args Arguments for the container.
+ * @param opts Working directory, mounts, hosts, entrypoint and the names of
+ *   the environment variables to pass through.
+ * @returns The command line.
  */
 export function buildDockerRun(
   image: string,

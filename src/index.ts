@@ -29,16 +29,11 @@ import {
 } from './gh-pages.js';
 import { buildOciPublish } from './oci-publish.js';
 
-/**
- * Minimal shape of a Chart.yaml document.
- */
-export interface ChartYaml {
-  name: string;
-  version?: string;
-  [key: string]: string | number | boolean | object | undefined;
-}
+export type { ChartYaml } from './helm-chart.js';
 
+/** Author name for the gh-pages commit when none is configured. */
 const COMMIT_NAME = 'semantic-release-bot';
+/** Author email for the gh-pages commit when none is configured. */
 const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
 
 /**
