@@ -133,7 +133,9 @@ export class HelmChart {
 /**
  * Return a new Chart.yaml string with only the `version` field updated. The
  * document is edited in place, so comments, quoting, anchors and key order
- * survive. A file that is not a YAML mapping is refused rather than replaced.
+ * survive, and long scalars are not refolded. A file that is not a YAML
+ * mapping, or whose version is shared through an anchor, is refused rather
+ * than rewritten.
  *
  * @param rawYaml Raw Chart.yaml content.
  * @param version Version string to set.
@@ -154,6 +156,14 @@ export function setChartVersion(rawYaml: string, version: string): string {
       'Chart.yaml must be a mapping with at least a name and a version.',
     );
   }
+  const existing = doc.get('version', true);
+  if (yaml.isNode(existing) && existing.anchor) {
+    throw new SemanticReleaseError(
+      'The version in Chart.yaml is shared through a YAML anchor.',
+      'EINVALIDCHARTYAML',
+      'Rewriting it would also change every alias of it (for example appVersion); give version its own value.',
+    );
+  }
   doc.set('version', version);
-  return String(doc);
+  return doc.toString({ lineWidth: 0 });
 }

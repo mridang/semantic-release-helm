@@ -195,6 +195,24 @@ describe('setChartVersion', () => {
     );
   });
 
+  it('refuses a version that is shared through an anchor', () => {
+    expect(() =>
+      setChartVersion('name: d\nversion: &v 1.0.0\nappVersion: *v\n', '2.0.0'),
+    ).toThrow(expect.objectContaining({ code: 'EINVALIDCHARTYAML' }));
+  });
+
+  it('allows an anchor on a different key', () => {
+    expect(
+      setChartVersion('base: &b x\nref: *b\nversion: 1.0.0\n', '2.0.0'),
+    ).toBe('base: &b x\nref: *b\nversion: 2.0.0\n');
+  });
+
+  it('does not refold long scalars', () => {
+    const long = 'word '.repeat(40).trim();
+    const raw = `description: ${long}\nversion: 1.0.0\n`;
+    expect(setChartVersion(raw, '2.0.0')).toBe(raw.replace('1.0.0', '2.0.0'));
+  });
+
   it('adds a version when the mapping has none', () => {
     expect(yaml.parse(setChartVersion('name: demo\n', '1.0.0'))).toEqual({
       name: 'demo',
