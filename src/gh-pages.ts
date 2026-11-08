@@ -66,48 +66,110 @@ export function commitIfStaged(
 }
 
 /**
- * Turn a git remote URL into the public web base of its repository, for
- * building release download links. scp-style remotes (`git@host:owner/repo`,
- * with or without the user) are recognised first, as git does, then
- * `https://`, `http://`, `ssh://` and `git://` URLs. Credentials are dropped,
- * and the port is kept only for `http` and `https`. No host is ever guessed:
- * local paths and `file://` remotes yield `undefined`.
+ * A dotted host name or an IPv4 address. A scp-style remote whose host is
+ * anything else (an `~/.ssh/config` alias such as `gh-work`, a Windows drive
+ * letter, an IPv6 literal) cannot be vouched for as a web host.
+ */
+const WEB_HOST =
+  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i;
+
+/**
+ * Turn a git remote URL into the public web base of its repository. scp-style
+ * remotes (`git@host:owner/repo`, with or without the user) are recognised
+ * first, as git does, then `https://`, `http://`, `ssh://` and `git://`
+ * URLs. Credentials are dropped. An `http` or `https` remote keeps its scheme
+ * and port; an ssh or git remote becomes `https` on its host name. Nothing is
+ * guessed: local paths, `file://` remotes, drive letters, ssh aliases and
+ * IPv6 literals yield `undefined`.
  *
  * @param remoteUrl A git remote URL, such as the output of `git remote get-url`.
  * @returns A URL such as `https://github.com/owner/repo`, or undefined when
- *   the remote has no host to derive it from.
+ *   the remote has no web host that can be derived from it.
  */
 export function repositoryWebBase(remoteUrl: string): string | undefined {
   const trimmed = remoteUrl.trim();
   const scp = /^(?:[^@/:]+@)?([^:/@]+):(?!\/\/)(.+)$/.exec(trimmed);
-  const parts = scp
-    ? { host: scp[1] ?? '', pathname: scp[2] ?? '' }
-    : urlParts(trimmed);
-  if (!parts || parts.host.length === 0) {
+  const parts = scp ? scpParts(scp[1] ?? '', scp[2] ?? '') : urlParts(trimmed);
+  if (!parts) {
     return undefined;
   }
   const repoPath = parts.pathname
     .replace(/^\/+|\/+$/g, '')
     .replace(/\.git$/, '');
-  return repoPath.length > 0 ? `https://${parts.host}/${repoPath}` : undefined;
+  return repoPath.length > 0
+    ? `${parts.scheme}//${parts.host}/${repoPath}`
+    : undefined;
 }
 
 /**
- * Split a URL remote into its host and path.
+ * The parts of a remote that a web link is built from.
+ */
+interface RemoteParts {
+  readonly scheme: 'http:' | 'https:';
+  readonly host: string;
+  readonly pathname: string;
+}
+
+/**
+ * Read an scp-style remote, accepting only a dotted host name.
+ *
+ * @param host The text before the colon.
+ * @param pathname The text after the colon.
+ * @returns The parts, or undefined when the host is not a web host.
+ */
+function scpParts(host: string, pathname: string): RemoteParts | undefined {
+  return WEB_HOST.test(host) ? { scheme: 'https:', host, pathname } : undefined;
+}
+
+/**
+ * Read a URL remote.
  *
  * @param value The remote.
- * @returns The host (with the port for http and https) and the path, or
- *   undefined when the value is not a URL.
+ * @returns The parts, or undefined when it is not an http, https, ssh or git
+ *   URL with a host.
  */
-function urlParts(
-  value: string,
-): { readonly host: string; readonly pathname: string } | undefined {
+function urlParts(value: string): RemoteParts | undefined {
   if (!URL.canParse(value)) {
     return undefined;
   }
   const url = new URL(value);
   const web = url.protocol === 'http:' || url.protocol === 'https:';
-  return { host: web ? url.host : url.hostname, pathname: url.pathname };
+  if (!web && url.protocol !== 'ssh:' && url.protocol !== 'git:') {
+    return undefined;
+  }
+  return url.hostname.length > 0
+    ? {
+        scheme: url.protocol === 'http:' ? 'http:' : 'https:',
+        host: web ? url.host : url.hostname,
+        pathname: url.pathname,
+      }
+    : undefined;
+}
+
+/**
+ * The base for release download links. The release path used by the caller is
+ * GitHub's, so a base derived from the remote is used only when that host is
+ * github.com or is the host of the repository URL semantic-release was
+ * configured with; otherwise the configured repository URL is used, and when
+ * neither is usable there is no base.
+ *
+ * @param remoteUrl The git remote the chart is pushed to.
+ * @param repositoryUrl `options.repositoryUrl` from semantic-release, if any.
+ * @returns A web base, or undefined when links cannot be built reliably.
+ */
+export function releaseBase(
+  remoteUrl: string,
+  repositoryUrl: string | undefined,
+): string | undefined {
+  const fromRemote = repositoryWebBase(remoteUrl);
+  const configured = repositoryWebBase(repositoryUrl ?? '');
+  const hostOf = (base: string | undefined): string | undefined =>
+    base === undefined ? undefined : new URL(base).hostname;
+  return fromRemote !== undefined &&
+    (hostOf(fromRemote) === 'github.com' ||
+      hostOf(fromRemote) === hostOf(configured))
+    ? fromRemote
+    : configured;
 }
 
 /**

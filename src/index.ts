@@ -24,7 +24,7 @@ import { DockerHelmDocs } from './helm-docs.js';
 import {
   buildWorktreeAddCommand,
   commitIfStaged,
-  repositoryWebBase,
+  releaseBase,
 } from './gh-pages.js';
 import { buildOciPublish } from './oci-publish.js';
 
@@ -439,9 +439,7 @@ export async function publish(
       cwd,
       encoding: 'utf8',
     }).trim();
-    const repoBase =
-      repositoryWebBase(remoteUrl) ??
-      repositoryWebBase(context.options?.repositoryUrl ?? '');
+    const repoBase = releaseBase(remoteUrl, context.options?.repositoryUrl);
 
     const indexDoc = files.reduce((doc, tgz) => {
       const abs = path.isAbsolute(tgz) ? tgz : path.join(cwd, tgz);

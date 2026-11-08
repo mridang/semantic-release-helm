@@ -6,6 +6,7 @@ import {
   buildWorktreeAddCommand,
   commitIfStaged,
   hasStagedChanges,
+  releaseBase,
   repositoryWebBase,
 } from '../src/gh-pages.js';
 import { withTempDir } from './utils/tmpdir.js';
@@ -101,7 +102,8 @@ describe('repositoryWebBase', () => {
     ['ssh://git@github.com:2222/o/r.git', 'https://github.com/o/r'],
     ['git://github.com/o/r.git', 'https://github.com/o/r'],
     ['https://ghes.corp:8443/o/r.git', 'https://ghes.corp:8443/o/r'],
-    ['http://ghes.corp:8080/o/r', 'https://ghes.corp:8080/o/r'],
+    ['http://ghes.corp:8080/o/r', 'http://ghes.corp:8080/o/r'],
+    ['http://git.internal:3000/o/r.git', 'http://git.internal:3000/o/r'],
     [
       'https://x-access-token:TOKEN@github.com/o/r.git',
       'https://github.com/o/r',
@@ -119,6 +121,12 @@ describe('repositoryWebBase', () => {
     ['r.git'],
     [''],
     ['https://github.com/'],
+    ['git@gh-work:o/r.git'],
+    ['C:\\path\\repo'],
+    ['C:/path/repo'],
+    ['git@[::1]:o/r'],
+    ['file://server/share/repo'],
+    ['ftp://example.com/o/r'],
   ])('derives nothing from %j', (remote) => {
     expect(repositoryWebBase(remote)).toBeUndefined();
   });
@@ -128,6 +136,33 @@ describe('repositoryWebBase', () => {
       repositoryWebBase('https://x-access-token:SECRET@github.com/o/r.git'),
     ).not.toContain('SECRET');
   });
+});
+
+describe('releaseBase', () => {
+  it.each([
+    ['git@github.com:o/r.git', undefined, 'https://github.com/o/r'],
+    [
+      'git@github.com:o/r.git',
+      'https://github.com/x/y',
+      'https://github.com/o/r',
+    ],
+    ['git@gh-work:o/r.git', 'https://github.com/o/r', 'https://github.com/o/r'],
+    ['/srv/git/r.git', 'https://github.com/o/r', 'https://github.com/o/r'],
+    [
+      'git@gitlab.com:o/r.git',
+      'https://github.com/o/r',
+      'https://github.com/o/r',
+    ],
+    ['git@gitlab.com:o/r.git', undefined, undefined],
+    ['git@ghes.corp:o/r.git', 'https://ghes.corp/o/r', 'https://ghes.corp/o/r'],
+    ['git@ghes.corp:o/r.git', 'git@ghes.corp:o/r.git', 'https://ghes.corp/o/r'],
+    ['/srv/git/r.git', undefined, undefined],
+  ])(
+    'remote %s with repositoryUrl %s gives %s',
+    (remote, repositoryUrl, expected) => {
+      expect(releaseBase(remote, repositoryUrl)).toBe(expected);
+    },
+  );
 });
 
 describe('buildWorktreeAddCommand', () => {
