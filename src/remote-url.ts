@@ -66,6 +66,9 @@ function urlParts(value: string): WebParts | undefined {
 export class RemoteUrl {
   private readonly raw: string;
 
+  /**
+   * @param raw The remote URL text.
+   */
   private constructor(raw: string) {
     this.raw = raw.trim();
   }

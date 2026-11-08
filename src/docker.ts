@@ -13,8 +13,11 @@ import { redactCredentials } from './utils/redact.js';
  * A host directory mounted into the container.
  */
 export interface Mount {
+  /** Directory on the host. */
   readonly host: string;
+  /** Path inside the container. */
   readonly container: string;
+  /** Whether the mount is read-only. */
   readonly readonly?: boolean;
 }
 

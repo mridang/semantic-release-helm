@@ -24,7 +24,9 @@ export interface OciRegistryOptions {
   readonly hostPort: string | undefined;
   /** Whether to talk plain HTTP and skip TLS verification. */
   readonly insecure: boolean;
+  /** Registry user name, if logging in. */
   readonly username: string | undefined;
+  /** Registry password, if logging in. It only travels in the environment. */
   readonly password: string | undefined;
   /** The image with the Helm CLI. */
   readonly helm: DockerImage;

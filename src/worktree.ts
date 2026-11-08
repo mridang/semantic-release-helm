@@ -7,7 +7,9 @@ import { run as execRun } from './utils/exec.js';
  * Who a commit is attributed to.
  */
 export interface Author {
+  /** Author name. */
   readonly name: string;
+  /** Author email. */
   readonly email: string;
 }
 
@@ -15,7 +17,9 @@ export interface Author {
  * A commit that was created.
  */
 export interface Commit {
+  /** The commit hash. */
   readonly sha: string;
+  /** The commit message. */
   readonly message: string;
 }
 
@@ -24,7 +28,9 @@ export interface Commit {
  * and the path.
  */
 export interface Change {
+  /** Porcelain status, such as `M` or `??`. */
   readonly status: string;
+  /** Path relative to the working tree. */
   readonly path: string;
 }
 

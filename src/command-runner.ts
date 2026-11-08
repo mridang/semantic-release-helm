@@ -10,7 +10,9 @@ import { quoteWord } from './utils/shell.js';
  * satisfies this, and so does a plain object in tests.
  */
 export interface Logger {
+  /** Write an informational line. */
   readonly log: (message: string) => void;
+  /** Write an error line. */
   readonly error: (message: string) => void;
 }
 
@@ -20,8 +22,11 @@ export interface Logger {
  * unless a test injects a fake).
  */
 export interface CommandContext {
+  /** Receives the command lines and their output. */
   readonly logger: Logger;
+  /** Directory the programs run in. */
   readonly cwd: string;
+  /** Runs a program without a shell; tests inject a fake. */
   readonly run?: Runner;
 }
 

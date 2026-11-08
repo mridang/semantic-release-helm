@@ -12,6 +12,9 @@ import { redactCredentials } from './utils/redact.js';
 export class GitRepository {
   private readonly context: CommandContext;
 
+  /**
+   * @param context Logger, directory and runner.
+   */
   private constructor(context: CommandContext) {
     this.context = context;
   }

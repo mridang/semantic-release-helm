@@ -247,6 +247,11 @@ export class Chart {
 
   private readonly fields: ChartYaml;
 
+  /**
+   * @param options Directory, images, logger, base directory and runner.
+   * @param text The Chart.yaml text.
+   * @param fields The parsed, normalised fields of the text.
+   */
   private constructor(options: ChartOptions, text: string, fields: ChartYaml) {
     this.options = options;
     this.text = text;

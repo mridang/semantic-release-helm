@@ -7,8 +7,11 @@ import type { RemoteUrl } from './remote-url.js';
  * working tree it is checked out in if any.
  */
 export interface Branch {
+  /** Branch name. */
   readonly name: string;
+  /** Name of the remote it tracks, if any. */
   readonly remote?: string;
+  /** Working tree it is checked out in, if any. */
   readonly directory?: string;
 }
 
@@ -16,7 +19,9 @@ export interface Branch {
  * Settings of a remote handle.
  */
 export interface RemoteOptions extends CommandContext {
+  /** Remote name, such as `origin`. */
   readonly name: string;
+  /** The remote's address. */
   readonly url: RemoteUrl;
 }
 
