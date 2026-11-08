@@ -58,12 +58,17 @@ export class DockerImage {
   /**
    * Run a POSIX shell script inside the container. The method sets
    * the entrypoint to /bin/sh and executes the script with -lc so
-   * a new shell interprets the script in one argument.
+   * a new shell interprets the script in one argument. Values in `env`
+   * are handed to the script as environment variables, never in its text.
    */
-  async shell(script: string): Promise<void> {
+  async shell(
+    script: string,
+    env?: Readonly<Record<string, string>>,
+  ): Promise<void> {
     await this.client.run(this.image, ['-lc', script], {
       ...this.runOptions(),
       entrypoint: '/bin/sh',
+      env,
     });
   }
 

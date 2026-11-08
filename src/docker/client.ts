@@ -25,6 +25,11 @@ export interface RunOptions {
   readonly mounts?: readonly Mount[];
   readonly addHosts?: readonly string[];
   readonly entrypoint?: string;
+  /**
+   * Variables for the container. Only their names reach the command line;
+   * the values travel through the process environment.
+   */
+  readonly env?: Readonly<Record<string, string>>;
   readonly logger: Logger;
 }
 

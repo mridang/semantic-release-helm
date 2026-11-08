@@ -43,7 +43,8 @@ export function buildDockerPull(image: string): string {
  * provided add-host entries, volume mounts, an optional entrypoint,
  * a working directory, the image, and argv. Every dynamic token is
  * shell-quoted, so spaces and metacharacters in paths, the image or flags
- * cannot split or inject commands.
+ * cannot split or inject commands. Environment variables are named only
+ * (`--env=NAME`), so their values never appear in the command line.
  */
 export function buildDockerRun(
   image: string,
@@ -53,6 +54,7 @@ export function buildDockerRun(
     readonly mounts: readonly Mount[];
     readonly addHosts: readonly string[];
     readonly entrypoint?: string;
+    readonly envNames?: readonly string[];
   },
 ): string {
   const parts = [
@@ -62,6 +64,7 @@ export function buildDockerRun(
     ...opts.mounts.map((m) =>
       quoteWord(`--volume=${m.host}:${m.container}${m.readonly ? ':ro' : ''}`),
     ),
+    ...(opts.envNames ?? []).map((n) => quoteWord(`--env=${n}`)),
     quoteWord(`--workdir=${opts.workdir}`),
     ...(opts.entrypoint ? [quoteWord(`--entrypoint=${opts.entrypoint}`)] : []),
     quoteWord(image),
@@ -77,15 +80,24 @@ export function buildDockerRun(
  * specific working directory and returns trimmed UTF-8 standard out.
  */
 interface Runner {
-  (cmd: string, cwd: string): { stdout: string };
+  (
+    cmd: string,
+    cwd: string,
+    env?: Readonly<Record<string, string>>,
+  ): { stdout: string };
 }
 
 /**
  * Default runner that executes commands via execSync with UTF-8 text
  * decoding and returns the trimmed stdout for logging and callers.
  */
-const defaultRunner: Runner = (cmd, cwd) => {
-  const out = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf8' }).trim();
+const defaultRunner: Runner = (cmd, cwd, env) => {
+  const out = execSync(cmd, {
+    cwd,
+    stdio: 'pipe',
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  }).trim();
   return { stdout: out };
 };
 
@@ -128,10 +140,11 @@ export class DockerCliClient implements DockerClient {
       ],
       addHosts: opts.addHosts ?? ['host.docker.internal:host-gateway'],
       entrypoint: opts.entrypoint,
+      envNames: Object.keys(opts.env ?? {}),
     });
     opts.logger.log(`$ ${cmd}`);
     try {
-      const { stdout } = this.runFn(cmd, opts.cwd);
+      const { stdout } = this.runFn(cmd, opts.cwd, opts.env);
       opts.logger.log(stdout.length ? stdout : '(no output)');
       return { stdout, code: 0 };
     } catch (e) {

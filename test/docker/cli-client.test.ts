@@ -103,3 +103,21 @@ test('buildDockerRun quotes mounts, workdir, entrypoint, image and flags', () =>
 test('buildDockerPull quotes an image reference that needs it', () => {
   expect(buildDockerPull('img; id')).toBe("docker pull 'img; id'");
 });
+
+test('DockerCliClient.run passes env values to the runner but not into the command', async () => {
+  const seen: Array<{ cmd: string; env?: Readonly<Record<string, string>> }> =
+    [];
+  const logs: string[] = [];
+  const client = new DockerCliClient((cmd, _cwd, env) => {
+    seen.push({ cmd, env });
+    return { stdout: '' };
+  });
+  await client.run('alpine:3', ['echo'], {
+    cwd: '/repo',
+    env: { SECRET_TOKEN: 'S3cr3t$x' },
+    logger: { log: (m) => logs.push(m), error: () => {} },
+  });
+  expect(seen[0]?.env).toEqual({ SECRET_TOKEN: 'S3cr3t$x' });
+  expect(seen[0]?.cmd).toContain('--env=SECRET_TOKEN');
+  expect([seen[0]?.cmd, ...logs].join('\n')).not.toContain('S3cr3t');
+});

@@ -56,3 +56,18 @@ test('DockerImage.shell sets entrypoint and -lc', async () => {
   expect(calls[0]).toContain('-lc');
   expect(calls[0]).toContain("'echo 1 && echo 2'");
 });
+
+test('DockerImage.shell hands env values to the client by name', async () => {
+  const seen: Array<Readonly<Record<string, string>> | undefined> = [];
+  const img = new DockerImage(
+    'alpine:3',
+    '/repo',
+    makeLogger(),
+    new DockerCliClient((_cmd, _cwd, env) => {
+      seen.push(env);
+      return { stdout: '' };
+    }),
+  );
+  await img.shell('true', { PW: 'x' });
+  expect(seen).toEqual([{ PW: 'x' }]);
+});

@@ -15,6 +15,7 @@ import { DockerImage } from './docker/image.js';
 import { runHostCmd } from './command-runner.js';
 import { HelmConfig, HelmPluginConfig } from './plugin-config.js';
 import { DockerHelmDocs } from './helm-docs.js';
+import { buildOciScript, OCI_PASSWORD_ENV } from './oci-publish.js';
 import { messageOf } from './utils/error.js';
 import { flattenRecord } from './utils/object.js';
 
@@ -59,15 +60,17 @@ async function runDockerCmd(
  * @param script A POSIX shell one-liner to execute via `/bin/sh -lc`.
  * @param cwd Host working directory, mounted to `/apps` in the container.
  * @param logger semantic-release logger used for structured logs.
+ * @param env Variables passed to the container by name, for secrets.
  */
 async function runDockerShell(
   image: string,
   script: string,
   cwd: string,
   logger: Logger,
+  env?: Readonly<Record<string, string>>,
 ): Promise<void> {
   const img = new DockerImage(image, cwd, logger, new DockerCliClient());
-  await img.shell(script);
+  await img.shell(script, env);
 }
 
 /**
@@ -354,13 +357,9 @@ export async function publish(
 
   if (cfg.isOciEnabled()) {
     const helmImage = cfg.getHelmImage();
-    const hostPort = cfg.getOciHostPort();
-    const plainHttpFlag = cfg.getOciPlainHttpFlag();
-    const insecureLoginFlag = cfg.getOciInsecureLoginFlag();
-    const username = cfg.getOciUsername();
-    const password = cfg.getOciPassword();
     const haveUser = cfg.hasOciUser();
     const havePass = cfg.hasOciPass();
+    const password = cfg.getOciPassword();
 
     logger.log(
       `publish: OCI mode -> repo="${cfg.getOciRepo()}", ` +
@@ -368,25 +367,21 @@ export async function publish(
         `usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
 
-    const steps = [
-      ...(cfg.getOciInsecure() && hostPort
-        ? [
-            'mkdir --parents /root/.config/helm/registry',
-            `printf %s '{"auths":{"${hostPort}":{"insecure":true}}}' > /root/.config/helm/registry/config.json`,
-          ]
-        : []),
-      ...(haveUser && havePass && hostPort
-        ? [
-            `helm registry login${insecureLoginFlag} --username=${username} --password=${password} ${hostPort}`,
-          ]
-        : []),
-      ...files.map(
-        (tgz) => `helm push ${tgz} ${cfg.getOciRepo()}${plainHttpFlag}`,
-      ),
-    ];
-
-    const script = steps.join(' && ');
-    await runDockerShell(helmImage, script, cwd, logger);
+    const script = buildOciScript({
+      hostPort: cfg.getOciHostPort(),
+      repo: cfg.getOciRepo(),
+      insecure: cfg.getOciInsecure(),
+      username: cfg.getOciUsername(),
+      hasPassword: havePass,
+      files,
+    });
+    await runDockerShell(
+      helmImage,
+      script,
+      cwd,
+      logger,
+      password ? { [OCI_PASSWORD_ENV]: password } : undefined,
+    );
 
     logger.log(
       `{ "helm": { "pushed": ${files.length}, "repo": "${cfg.getOciRepo()}" } }`,
