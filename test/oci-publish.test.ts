@@ -8,7 +8,7 @@ const BASE = {
   repo: 'oci://reg.example.test:5000/charts',
   insecure: false,
   username: 'user',
-  password: 'S3cr3t$x "q" \'z\' `id`',
+  password: 'placeholder$x "q" \'z\' `id`',
   files: ['dist/charts/app-1.0.0.tgz'],
 } as const;
 
@@ -23,7 +23,7 @@ describe('buildOciPublish', () => {
   it('passes the password only through the environment', () => {
     const { script, env } = buildOciPublish(BASE);
     expect(env).toEqual({ OCI_PASSWORD: BASE.password });
-    expect(script).not.toContain('S3cr3t');
+    expect(script).not.toContain('placeholder');
     expect(script).not.toContain(BASE.password);
   });
 
@@ -82,7 +82,7 @@ describe('buildOciPublish', () => {
 
 describe('OCI publish secret wiring through the docker layer', () => {
   it('hands the password to the runner in env and to nothing that is logged or run', async () => {
-    const password = 'S3cr3t$x "q" \'z\'';
+    const password = 'placeholder$x "q" \'z\'';
     const runs: Array<{
       cmd: string;
       env: Readonly<Record<string, string>> | undefined;
@@ -113,7 +113,7 @@ describe('OCI publish secret wiring through the docker layer', () => {
     expect(runs).toHaveLength(1);
     expect(runs[0]?.env).toEqual({ OCI_PASSWORD: password });
     expect(runs[0]?.cmd).toContain('--env=OCI_PASSWORD');
-    expect(runs[0]?.cmd).not.toContain('S3cr3t');
-    expect(logs.join('\n')).not.toContain('S3cr3t');
+    expect(runs[0]?.cmd).not.toContain('placeholder');
+    expect(logs.join('\n')).not.toContain('placeholder');
   });
 });

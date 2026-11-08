@@ -114,12 +114,12 @@ test('DockerCliClient.run passes env values to the runner but not into the comma
   });
   await client.run('alpine:3', ['echo'], {
     cwd: '/repo',
-    env: { SECRET_TOKEN: 'S3cr3t$x' },
+    env: { SECRET_TOKEN: 'placeholder$x' },
     logger: { log: (m) => logs.push(m), error: () => {} },
   });
-  expect(seen[0]?.env).toEqual({ SECRET_TOKEN: 'S3cr3t$x' });
+  expect(seen[0]?.env).toEqual({ SECRET_TOKEN: 'placeholder$x' });
   expect(seen[0]?.cmd).toContain('--env=SECRET_TOKEN');
-  expect([seen[0]?.cmd, ...logs].join('\n')).not.toContain('S3cr3t');
+  expect([seen[0]?.cmd, ...logs].join('\n')).not.toContain('placeholder');
 });
 
 test('DockerCliClient.run with env never logs or throws the value of a NUL-byte password', async () => {
@@ -146,12 +146,12 @@ test('DockerCliClient.run with env never logs or throws the value of a NUL-byte 
 test('DockerCliClient.run with env removes the value from an ordinary failure message', async () => {
   const logs: string[] = [];
   const client = new DockerCliClient(() => {
-    throw new Error('login failed for S3cr3t$x at registry');
+    throw new Error('login failed for placeholder$x at registry');
   });
   await expect(
     client.run('alpine:3', ['true'], {
       cwd: '/repo',
-      env: { OCI_PASSWORD: 'S3cr3t$x' },
+      env: { OCI_PASSWORD: 'placeholder$x' },
       logger: { log: () => {}, error: (m) => logs.push(m) },
     }),
   ).rejects.toThrow('login failed for *** at registry');
