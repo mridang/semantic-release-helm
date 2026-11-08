@@ -395,48 +395,76 @@ describe('HelmIndex', () => {
   );
 });
 
-describe('HelmIndex.fromFile with unusual index.yaml content', () => {
+describe('HelmIndex load, append and write of unusual index.yaml content', () => {
   it(
-    'keeps existing entries verbatim and drops non-object items and non-lists',
+    'keeps unknown top-level keys, odd items and non-list chart keys through append',
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
       fs.writeFileSync(
         file,
         yaml.stringify({
           apiVersion: 'v9',
-          generated: 'then',
+          annotations: { team: 'platform' },
           entries: {
-            good: [{ name: 'good', version: '1.0.0' }, 'junk', { name: 'x' }],
-            numeric: [{ name: 'numeric', version: 2 }],
-            notAList: { version: '1.0.0' },
+            other: [{ name: 'other', version: 2 }, 'junk', null],
+            nul: null,
+            mapping: { a: 1 },
           },
         }),
         'utf8',
       );
+      const chart = HelmChart.from(writeChartYaml(base, 'demo', '1.0.0'));
+      const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
       const out = path.join(base, 'out.yaml');
-      HelmIndex.fromFile(file).writeTo(out);
-      expect(readIndex(out)).toEqual({
-        apiVersion: 'v1',
-        generated: 'then',
-        entries: {
-          good: [{ name: 'good', version: '1.0.0' }, { name: 'x' }],
-          numeric: [{ name: 'numeric', version: 2 }],
-        },
-      });
+      HelmIndex.fromFile(file).append(chart, tgz, '').writeTo(out);
+      const doc = yaml.parse(fs.readFileSync(out, 'utf8'));
+      expect(doc.apiVersion).toBe('v1');
+      expect(doc.annotations).toEqual({ team: 'platform' });
+      expect(doc.entries.other).toEqual([
+        { name: 'other', version: 2 },
+        'junk',
+        null,
+      ]);
+      expect(doc.entries.nul).toBeNull();
+      expect(doc.entries.mapping).toEqual({ a: 1 });
+      expect(doc.entries.demo).toHaveLength(1);
     }),
   );
 
   it(
-    'yields an empty index for an empty or non-mapping file',
+    'replaces a non-list value under the appended chart key',
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(file, 'entries:\n  demo: nope\n', 'utf8');
+      const chart = HelmChart.from(writeChartYaml(base, 'demo', '1.0.0'));
+      const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
+      const out = path.join(base, 'out.yaml');
+      HelmIndex.fromFile(file).append(chart, tgz, '').writeTo(out);
+      expect(readIndex(out).entries.demo?.map((e) => e.version)).toEqual([
+        '1.0.0',
+      ]);
+    }),
+  );
+
+  it(
+    'yields an empty index for an empty file',
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
       const out = path.join(base, 'out.yaml');
       fs.writeFileSync(file, '', 'utf8');
       HelmIndex.fromFile(file).writeTo(out);
       expect(readIndex(out)).toEqual({ apiVersion: 'v1', entries: {} });
-      fs.writeFileSync(file, '- a\n', 'utf8');
-      HelmIndex.fromFile(file).writeTo(out);
-      expect(readIndex(out)).toEqual({ apiVersion: 'v1', entries: {} });
+    }),
+  );
+
+  it(
+    'refuses to replace an index that is not a mapping',
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(file, '- a\n- b\n', 'utf8');
+      expect(() => HelmIndex.fromFile(file)).toThrow(
+        expect.objectContaining({ code: 'EINVALIDINDEX' }),
+      );
     }),
   );
 });
@@ -451,9 +479,10 @@ describe('HelmIndex.append with unusual chart names', () => {
       const tgz = writeTgz(base, 'constructor', '1.0.0', 'x');
       const out = path.join(base, 'index.yaml');
       HelmIndex.empty().append(chart, tgz, '').writeTo(out);
-      expect(readIndex(out).entries.constructor?.map((e) => e.version)).toEqual(
-        ['1.0.0'],
-      );
+      const written = yaml.parse(fs.readFileSync(out, 'utf8'));
+      expect(
+        written.entries.constructor.map((e: ChartEntry) => e.version),
+      ).toEqual(['1.0.0']);
     }),
   );
 });

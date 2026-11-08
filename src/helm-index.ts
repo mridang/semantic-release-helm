@@ -3,14 +3,16 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import * as yaml from 'yaml';
 import { HelmChart } from './helm-chart.js';
+import SemanticReleaseError from '@semantic-release/error';
 import { isRecord } from './utils/object.js';
 
 /**
  * Entry schema for a single chart version inside an index. The type
  * is intentionally permissive to remain forward compatible with new
- * Helm metadata, and entries already in an index are kept verbatim.
+ * Helm metadata. Tests rely on the version field being present.
  */
 export interface ChartEntry {
+  version: string;
   [key: string]: unknown;
 }
 
@@ -60,34 +62,16 @@ function passthroughAllExceptReserved(
 }
 
 /**
- * Read the entries of a parsed index.yaml. Entries are kept verbatim so a
- * rewrite never loses data; only items that are not objects are dropped, and
- * chart keys whose value is not a list.
- *
- * @param parsed The parsed document.
- * @returns A map of chart name to its entries.
- */
-function entriesOf(parsed: unknown): Record<string, ChartEntry[]> {
-  const raw =
-    isRecord(parsed) && isRecord(parsed.entries) ? parsed.entries : {};
-  return Object.fromEntries(
-    Object.entries(raw).flatMap(([name, list]) =>
-      Array.isArray(list) ? [[name, list.filter(isRecord)]] : [],
-    ),
-  );
-}
-
-/**
  * An immutable Helm index that can be loaded, merged, and serialized.
  * Methods return new instances to make merges predictable in tests.
  */
 export class HelmIndex {
-  private readonly doc: HelmIndexDoc;
+  private readonly doc: Readonly<Record<string, unknown>>;
 
   /**
    * @param doc The index document this instance wraps.
    */
-  private constructor(doc: HelmIndexDoc) {
+  private constructor(doc: Readonly<Record<string, unknown>>) {
     this.doc = doc;
   }
 
@@ -109,10 +93,20 @@ export class HelmIndex {
       return HelmIndex.empty();
     }
     const parsed: unknown = yaml.parse(fs.readFileSync(indexPath, 'utf8'));
+    if (parsed === null || parsed === undefined) {
+      return HelmIndex.empty();
+    }
+    if (!isRecord(parsed)) {
+      throw new SemanticReleaseError(
+        'The existing Helm index is not a YAML mapping.',
+        'EINVALIDINDEX',
+        `Refusing to overwrite ${indexPath}; fix or remove it.`,
+      );
+    }
     return new HelmIndex({
-      ...(isRecord(parsed) ? parsed : {}),
+      ...parsed,
       apiVersion: 'v1',
-      entries: entriesOf(parsed),
+      entries: isRecord(parsed.entries) ? parsed.entries : {},
     });
   }
 
@@ -156,15 +150,30 @@ export class HelmIndex {
     };
 
     const key = chart.name();
-    const kept = (
-      Object.hasOwn(this.doc.entries, key) ? (this.doc.entries[key] ?? []) : []
-    ).filter((e) => String(e.version) !== String(entry.version));
+    const previous: unknown = Object.hasOwn(this.currentEntries(), key)
+      ? this.currentEntries()[key]
+      : [];
+    const kept = (Array.isArray(previous) ? previous : []).filter(
+      (e: unknown) =>
+        !(isRecord(e) && String(e.version) === String(entry.version)),
+    );
 
     return new HelmIndex({
+      ...this.doc,
       apiVersion: 'v1',
-      entries: { ...this.doc.entries, [key]: [entry, ...kept] },
+      entries: { ...this.currentEntries(), [key]: [entry, ...kept] },
       generated: created,
     });
+  }
+
+  /**
+   * The chart entries of the wrapped document, whatever they contain.
+   *
+   * @returns The `entries` mapping, or an empty one.
+   */
+  private currentEntries(): Readonly<Record<string, unknown>> {
+    const entries = this.doc.entries;
+    return isRecord(entries) ? entries : {};
   }
 
   /**
