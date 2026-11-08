@@ -1,9 +1,30 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'yaml';
-import { HelmChart, ChartYaml, setChartVersion } from '../src/helm-chart.js';
+import {
+  Chart,
+  ChartYaml,
+  setChartVersion,
+  templateSetArgs,
+} from '../src/chart.js';
+import { DockerImage } from '../src/docker.js';
+import { fakeRunner, recordingLogger } from './utils/runner.js';
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { withTempDir } from './utils/tmpdir.js';
+
+/** The pieces a chart needs, with a recording runner. */
+function setup(cwd: string, answer?: Parameters<typeof fakeRunner>[0]) {
+  const { run, calls } = fakeRunner(answer);
+  const { logger, lines } = recordingLogger();
+  const helm = new DockerImage({ image: 'helm:3', logger, cwd, run });
+  const docs = new DockerImage({ image: 'docs:1', logger, cwd, run });
+  return { options: { cwd, logger, run, helm, docs }, calls, lines };
+}
+
+/** A chart in a directory, with images that only record what they run. */
+function chartAt(dir: string): Chart {
+  return Chart.open({ ...setup(dir).options, directory: '' });
+}
 
 const FIXED_TIME = new Date('2001-01-02T03:04:05.000Z');
 
@@ -36,7 +57,7 @@ afterAll(() => {
   jest.useRealTimers();
 });
 
-describe('HelmChart', () => {
+describe('Chart', () => {
   /**
    * Loads name and version from Chart.yaml to ensure the parser extracts
    * required core fields correctly and exposes them via accessors.
@@ -45,7 +66,7 @@ describe('HelmChart', () => {
     'loads name and version',
     withTempDir((base: string) => {
       const chartDir = writeChart(base, 'demo', '1.2.3');
-      const chart = HelmChart.from(chartDir);
+      const chart = chartAt(chartDir);
       expect({ name: chart.name(), version: chart.version() }).toEqual({
         name: 'demo',
         version: '1.2.3',
@@ -60,7 +81,7 @@ describe('HelmChart', () => {
   it(
     'creates new instance on version change',
     withTempDir((base: string) => {
-      const c1 = HelmChart.from(writeChart(base, 'demo', '1.0.0'));
+      const c1 = chartAt(writeChart(base, 'demo', '1.0.0'));
       const c2 = c1.withVersion('1.1.0');
       expect({ old: c1.version(), newer: c2.version() }).toEqual({
         old: '1.0.0',
@@ -82,7 +103,7 @@ describe('HelmChart', () => {
         'x-future': { ok: true },
       });
       const file = path.join(dir, 'Chart.yaml');
-      HelmChart.from(dir).withVersion('0.2.0').saveTo(file);
+      chartAt(dir).withVersion('0.2.0').save();
       expect(yaml.parse(fs.readFileSync(file, 'utf8')) as ChartYaml).toEqual({
         apiVersion: 'v2',
         name: 'demo',
@@ -100,10 +121,10 @@ describe('HelmChart', () => {
    * the expected core fields without lossy transformations.
    */
   it(
-    'emits valid YAML via toYAML',
+    'emits valid YAML via toString',
     withTempDir((base: string) => {
-      const chart = HelmChart.from(writeChart(base, 'demo', '9.9.9'));
-      expect(yaml.parse(chart.toYAML()) as ChartYaml).toEqual({
+      const chart = chartAt(writeChart(base, 'demo', '9.9.9'));
+      expect(yaml.parse(chart.toString()) as ChartYaml).toEqual({
         apiVersion: 'v2',
         name: 'demo',
         version: '9.9.9',
@@ -119,10 +140,10 @@ describe('HelmChart', () => {
   it(
     'returns shallow copy from raw',
     withTempDir((base: string) => {
-      const chart = HelmChart.from(writeChart(base, 'demo', '1.0.0', { a: 1 }));
-      const r1 = chart.raw();
+      const chart = chartAt(writeChart(base, 'demo', '1.0.0', { a: 1 }));
+      const r1 = chart.metadata();
       (r1 as Record<string, unknown>).a = 2;
-      expect(chart.raw()).toEqual({
+      expect(chart.metadata()).toEqual({
         apiVersion: 'v2',
         name: 'demo',
         version: '1.0.0',
@@ -133,7 +154,7 @@ describe('HelmChart', () => {
   );
 });
 
-describe('HelmChart.from with unusual Chart.yaml content', () => {
+describe('Chart.open with unusual Chart.yaml content', () => {
   it(
     'stringifies a numeric name, version and apiVersion',
     withTempDir((base: string) => {
@@ -144,7 +165,7 @@ describe('HelmChart.from with unusual Chart.yaml content', () => {
         'name: 7\nversion: 1.5\napiVersion: 2\n',
         'utf8',
       );
-      const chart = HelmChart.from(dir);
+      const chart = chartAt(dir);
       expect({
         name: chart.name(),
         version: chart.version(),
@@ -161,7 +182,7 @@ describe('HelmChart.from with unusual Chart.yaml content', () => {
       const dir = path.join(base, 'empty');
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, 'Chart.yaml'), content, 'utf8');
-      const chart = HelmChart.from(dir);
+      const chart = chartAt(dir);
       expect({
         name: chart.name(),
         version: chart.version(),
@@ -303,14 +324,14 @@ describe('setChartVersion', () => {
   });
 });
 
-describe('HelmChart.from with invalid YAML', () => {
+describe('Chart.open with invalid YAML', () => {
   it(
     'raises a coded error that names the file',
     withTempDir((base: string) => {
       const dir = path.join(base, 'bad');
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, 'Chart.yaml'), 'a: 1\n---\nb: 2\n');
-      expect(() => HelmChart.from(dir)).toThrow(
+      expect(() => chartAt(dir)).toThrow(
         expect.objectContaining({
           code: 'EINVALIDCHARTYAML',
           details: expect.stringContaining('Chart.yaml'),
@@ -318,4 +339,165 @@ describe('HelmChart.from with invalid YAML', () => {
       );
     }),
   );
+});
+
+describe('Chart working with Helm', () => {
+  const chartIn = (base: string, answer?: Parameters<typeof fakeRunner>[0]) => {
+    writeChart(base, 'app', '1.2.3');
+    const s = setup(base, answer);
+    const chart = Chart.open({ ...s.options, directory: 'app' });
+    return { chart, ...s };
+  };
+
+  /** The arguments the container received, after the image. */
+  const afterImage = (args: readonly string[] | undefined, image: string) =>
+    (args ?? []).slice((args ?? []).indexOf(image) + 1);
+
+  it(
+    'lints, renders and packages in the helm image',
+    withTempDir(async (base) => {
+      const { chart, calls } = chartIn(base);
+      await chart.lint();
+      await expect(chart.render({ a: { b: 'c' }, n: 1 })).resolves.toBe('');
+      const pkg = await chart.package('dist/charts');
+      expect(calls.map((c) => afterImage(c.args, 'helm:3'))).toEqual([
+        ['lint', 'app'],
+        ['template', 'sr-check', 'app', '--set', 'a.b=c', '--set', 'n=1'],
+        ['package', 'app', '--destination=dist/charts'],
+      ]);
+      expect(pkg.path).toBe(path.join(base, 'dist', 'charts', 'app-1.2.3.tgz'));
+    }),
+  );
+
+  it(
+    'returns the rendered manifest',
+    withTempDir(async (base) => {
+      const { chart } = chartIn(base, () => 'kind: ConfigMap\n');
+      expect(await chart.render(undefined)).toBe('kind: ConfigMap');
+    }),
+  );
+
+  it(
+    'adds no --set without template values',
+    withTempDir(async (base) => {
+      const { chart, calls } = chartIn(base);
+      await chart.render(undefined);
+      expect(afterImage(calls[0]?.args, 'helm:3')).toEqual([
+        'template',
+        'sr-check',
+        'app',
+      ]);
+    }),
+  );
+
+  it(
+    'writes a new version only when saved',
+    withTempDir(async (base) => {
+      const { chart } = chartIn(base);
+      const next = chart.withVersion('2.0.0');
+      expect(next.version()).toBe('2.0.0');
+      expect(chart.version()).toBe('1.2.3');
+      expect(
+        fs.readFileSync(path.join(base, 'app', 'Chart.yaml'), 'utf8'),
+      ).toContain('1.2.3');
+      expect(next.save()).toBe(next);
+      expect(
+        fs.readFileSync(path.join(base, 'app', 'Chart.yaml'), 'utf8'),
+      ).toContain('2.0.0');
+    }),
+  );
+
+  it(
+    'normalizes the README and runs helm-docs',
+    withTempDir(async (base) => {
+      const { chart, calls, lines } = chartIn(base);
+      fs.writeFileSync(
+        path.join(base, 'app', 'README.md'),
+        '<!-- render.chart.valuesTable -->\nold\n<!-- end.chart.valuesTable -->\n',
+      );
+      expect(await chart.document(['--template-files=README.md'])).toBe(chart);
+      expect(afterImage(calls[0]?.args, 'docs:1')).toEqual([
+        'helm-docs',
+        '--chart-search-root=app',
+        '--template-files=README.md',
+      ]);
+      expect(
+        fs.readFileSync(path.join(base, 'app', 'README.md'), 'utf8'),
+      ).toContain('{{ template "chart.valuesTable" . }}');
+      expect(lines).toContain(
+        'helm-docs: normalized README valuesTable block(s)',
+      );
+      expect(lines).toContain('prepare: helm-docs succeeded');
+    }),
+  );
+
+  it(
+    'says so when there is no README or no marker',
+    withTempDir(async (base) => {
+      const a = chartIn(base);
+      await a.chart.document([]);
+      expect(a.lines).toContain(
+        'helm-docs: README.md not found; skipping normalization',
+      );
+      fs.writeFileSync(path.join(base, 'app', 'README.md'), '# nothing\n');
+      const b = chartIn(base);
+      await b.chart.document([]);
+      expect(b.lines).toContain(
+        'helm-docs: README normalization not needed (no markers found)',
+      );
+    }),
+  );
+
+  it(
+    'logs instead of throwing when helm-docs fails',
+    withTempDir(async (base) => {
+      const { chart, lines } = chartIn(base, () => {
+        throw new Error('no such image');
+      });
+      expect(await chart.document([])).toBe(chart);
+      expect(lines).toContain(
+        'prepare: helm-docs failed or missing; skipping docs generation',
+      );
+    }),
+  );
+
+  it(
+    'tells whether a chart exists',
+    withTempDir((base) => {
+      writeChart(base, 'app', '1.0.0');
+      expect(Chart.exists({ cwd: base, directory: 'app' })).toBe(true);
+      expect(Chart.exists({ cwd: base, directory: 'missing' })).toBe(false);
+    }),
+  );
+});
+describe('templateSetArgs', () => {
+  it('emits one --set per flattened leaf', () => {
+    expect(
+      templateSetArgs({
+        image: { tag: 'v1', pull: { policy: 'Always' } },
+        n: 3,
+      }),
+    ).toEqual([
+      '--set',
+      'image.tag=v1',
+      '--set',
+      'image.pull.policy=Always',
+      '--set',
+      'n=3',
+    ]);
+  });
+
+  it('stringifies arrays and null without descending', () => {
+    expect(templateSetArgs({ list: ['a', 'b'], nothing: null })).toEqual([
+      '--set',
+      'list=a,b',
+      '--set',
+      'nothing=null',
+    ]);
+  });
+
+  it('is empty without values', () => {
+    expect(templateSetArgs(undefined)).toEqual([]);
+    expect(templateSetArgs({})).toEqual([]);
+  });
 });

@@ -13,6 +13,17 @@ export interface Logger {
 }
 
 /**
+ * What every object that runs a program needs: a logger for the command
+ * lines, the directory to run in, and the runner (the real no-shell one
+ * unless a test injects a fake).
+ */
+export interface CommandContext {
+  readonly logger: Logger;
+  readonly cwd: string;
+  readonly run?: Runner;
+}
+
+/**
  * Log captured output when it has content: trimmed if that leaves text,
  * otherwise as captured.
  *

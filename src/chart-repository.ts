@@ -1,8 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as crypto from 'node:crypto';
 import * as yaml from 'yaml';
-import { HelmChart } from './helm-chart.js';
+import type { Chart } from './chart.js';
+import type { ChartPackage } from './chart-package.js';
 import SemanticReleaseError from '@semantic-release/error';
 import { messageOf } from './utils/error.js';
 import { isRecord } from './utils/object.js';
@@ -90,54 +90,56 @@ function without(
 }
 
 /**
- * An immutable Helm index that can be loaded, merged, and serialized.
- * Methods return new instances to make merges predictable in tests.
+ * The Helm chart repository index (`index.yaml`) in a directory. It is
+ * immutable: adding a chart returns the updated repository, and saving writes
+ * it and returns it.
  */
-export class HelmIndex {
+export class ChartRepository {
+  private readonly file: string;
+
   private readonly entries: Readonly<Record<string, unknown>>;
 
   private readonly rest: Readonly<Record<string, unknown>>;
 
   /**
+   * @param file Path of the index.yaml this repository is saved to.
    * @param entries The chart entries, kept as loaded.
    * @param rest Every other member of the document, in order.
    */
   private constructor(
+    file: string,
     entries: Readonly<Record<string, unknown>>,
     rest: Readonly<Record<string, unknown>>,
   ) {
+    this.file = file;
     this.entries = entries;
     this.rest = rest;
   }
 
   /**
-   * Return an empty index with no entries.
-   */
-  static empty(): HelmIndex {
-    return new HelmIndex({}, {});
-  }
-
-  /**
-   * Load an index from disk when present, otherwise create a fresh
-   * empty index. An absent or null `entries` means empty.
+   * Open the repository index in a directory: the existing `index.yaml`, or
+   * an empty repository when there is none. An absent or null `entries` means
+   * empty.
    *
-   * @param indexPath Path to an index.yaml file.
+   * @param directory Directory that holds (or will hold) `index.yaml`.
+   * @returns The repository.
    * @throws SemanticReleaseError (`EINVALIDINDEX`) when the file is not valid
    *   YAML, is not a mapping, or its `entries` is not a mapping.
    */
-  static fromFile(indexPath: string): HelmIndex {
-    if (!fs.existsSync(indexPath)) {
-      return HelmIndex.empty();
+  static open(directory: string): ChartRepository {
+    const file = path.join(directory, 'index.yaml');
+    if (!fs.existsSync(file)) {
+      return new ChartRepository(file, {}, {});
     }
-    const parsed = parseIndex(fs.readFileSync(indexPath, 'utf8'), indexPath);
+    const parsed = parseIndex(fs.readFileSync(file, 'utf8'), file);
     if (parsed === null || parsed === undefined) {
-      return HelmIndex.empty();
+      return new ChartRepository(file, {}, {});
     }
     if (!isRecord(parsed)) {
       throw new SemanticReleaseError(
         'The existing Helm index is not a YAML mapping.',
         'EINVALIDINDEX',
-        `Refusing to overwrite ${indexPath}; fix or remove it.`,
+        `Refusing to overwrite ${file}; fix or remove it.`,
       );
     }
     const entries = parsed.entries ?? {};
@@ -145,33 +147,39 @@ export class HelmIndex {
       throw new SemanticReleaseError(
         'The "entries" of the existing Helm index is not a YAML mapping.',
         'EINVALIDINDEX',
-        `Refusing to overwrite ${indexPath}; fix or remove it.`,
+        `Refusing to overwrite ${file}; fix or remove it.`,
       );
     }
-    return new HelmIndex(entries, without(parsed, ['apiVersion', 'entries']));
+    return new ChartRepository(
+      file,
+      entries,
+      without(parsed, ['apiVersion', 'entries']),
+    );
   }
 
   /**
-   * Append a packaged chart to the index. The entry includes fields
-   * computed by this writer and all non-reserved Chart.yaml fields.
-   * Extra fields are merged last. Existing versions are replaced by
-   * version string rather than duplicated.
+   * Add a packaged chart to the repository. The entry includes fields
+   * computed here and all non-reserved Chart.yaml fields. Extra fields are
+   * merged last. An existing entry with the same version is replaced rather
+   * than duplicated.
    *
-   * @param chart Parsed chart instance.
-   * @param packagedTgzAbsPath Absolute path to the packaged .tgz.
-   * @param baseUrl Base URL for absolute URLs. When blank, relative
-   *                file names are used instead.
+   * @param chart The chart that was packaged.
+   * @param pkg Its package.
+   * @param baseUrl Base URL for absolute URLs. When blank, the file name is
+   *   used as a relative URL.
    * @param extra Optional extra fields to merge into the entry.
+   * @returns The repository with the chart added.
+   * @throws SemanticReleaseError (`EINVALIDINDEX`) when the existing entry
+   *   for this chart is not a list.
    */
-  append(
-    chart: HelmChart,
-    packagedTgzAbsPath: string,
+  add(
+    chart: Chart,
+    pkg: ChartPackage,
     baseUrl: string,
     extra?: Readonly<Record<string, unknown>>,
-  ): HelmIndex {
-    const bytes = fs.readFileSync(packagedTgzAbsPath);
-    const digest = crypto.createHash('sha256').update(bytes).digest('hex');
-    const filename = path.basename(packagedTgzAbsPath);
+  ): ChartRepository {
+    const digest = pkg.digest();
+    const filename = pkg.fileName;
     const created = new Date().toISOString();
 
     const urls =
@@ -186,7 +194,7 @@ export class HelmIndex {
       created,
       digest,
       urls,
-      ...passthroughAllExceptReserved(chart.raw()),
+      ...passthroughAllExceptReserved(chart.metadata()),
       ...extra,
     };
 
@@ -194,43 +202,45 @@ export class HelmIndex {
     const previous: unknown = Object.hasOwn(this.entries, key)
       ? this.entries[key]
       : undefined;
-    if (
-      previous !== undefined &&
-      previous !== null &&
-      !Array.isArray(previous)
-    ) {
-      throw new SemanticReleaseError(
-        `The existing Helm index entry for "${key}" is not a list.`,
-        'EINVALIDINDEX',
-        'Fix or remove it on the gh-pages branch before publishing.',
-      );
+    if (previous !== undefined && previous !== null) {
+      if (!Array.isArray(previous)) {
+        throw new SemanticReleaseError(
+          `The existing Helm index entry for "${key}" is not a list.`,
+          'EINVALIDINDEX',
+          'Fix or remove it on the gh-pages branch before publishing.',
+        );
+      }
     }
-    const kept = (previous ?? []).filter(
-      (e: unknown) =>
-        !(isRecord(e) && String(e.version) === String(entry.version)),
+    const existing: readonly unknown[] = Array.isArray(previous)
+      ? previous
+      : [];
+    const kept = existing.filter(
+      (e) => !(isRecord(e) && String(e.version) === String(entry.version)),
     );
 
-    return new HelmIndex(
+    return new ChartRepository(
+      this.file,
       { ...this.entries, [key]: [entry, ...kept] },
       { ...without(this.rest, ['generated']), generated: created },
     );
   }
 
   /**
-   * Serialize the index to YAML at the given path. Parent folders
-   * are created when missing.
+   * Write the repository to its `index.yaml`. Parent folders are created
+   * when missing.
    *
-   * @param indexPath Destination path for the index.yaml file.
+   * @returns This repository.
    */
-  writeTo(indexPath: string): void {
-    fs.mkdirSync(path.dirname(indexPath), { recursive: true });
+  save(): ChartRepository {
+    fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.writeFileSync(
-      indexPath,
+      this.file,
       yaml.stringify(
         { apiVersion: 'v1', entries: this.entries, ...this.rest },
         { lineWidth: 0 },
       ),
       'utf8',
     );
+    return this;
   }
 }

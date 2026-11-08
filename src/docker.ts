@@ -1,7 +1,7 @@
 import SemanticReleaseError from '@semantic-release/error';
-import { runLogged, type Logger } from './command-runner.js';
+import { runLogged, type CommandContext } from './command-runner.js';
 import { codeOf, messageOf, statusOf } from './utils/error.js';
-import { run as execRun, type Runner } from './utils/exec.js';
+import { run as execRun } from './utils/exec.js';
 import { isRecord } from './utils/object.js';
 import { redactCredentials, redactError } from './utils/redact.js';
 
@@ -15,15 +15,11 @@ export interface Mount {
 }
 
 /**
- * Settings of a Docker client. Only `logger` and `cwd` are required.
+ * Settings of a Docker image handle.
  */
-export interface DockerOptions {
-  /** Receives the command lines and their output. */
-  readonly logger: Logger;
-  /** Host directory that is mounted at `/apps` and used as the working directory. */
-  readonly cwd: string;
-  /** Runs `docker`; defaults to the real no-shell runner. Tests inject a fake. */
-  readonly run?: Runner;
+export interface DockerImageOptions extends CommandContext {
+  /** Image reference, including the tag. */
+  readonly image: string;
   /** Working directory inside the container. Defaults to `/apps`. */
   readonly workdir?: string;
   /** Mounts. Defaults to `cwd` at `/apps`. */
@@ -136,95 +132,107 @@ function withheld(
 }
 
 /**
- * Everything the plugin does with Docker: check that it is installed, pull
- * images, and run a container with the repository mounted. All failures are
- * mapped to coded errors here, so callers never see argv or exit codes.
+ * Check that the Docker CLI can be started and answers `docker version`.
+ *
+ * @param context Logger, directory and runner.
+ * @throws SemanticReleaseError (`ENODOCKER`) when it cannot.
  */
-export class DockerClient {
-  private readonly options: DockerOptions;
+export async function assertDockerAvailable(
+  context: CommandContext,
+): Promise<void> {
+  try {
+    await runLogged(
+      context.run ?? execRun,
+      'docker',
+      ['version'],
+      { cwd: context.cwd },
+      context.logger,
+    );
+  } catch {
+    throw new SemanticReleaseError(
+      'Docker not available.',
+      'ENODOCKER',
+      'Docker must be installed and on PATH.',
+    );
+  }
+}
 
-  private readonly runner: Runner;
+/**
+ * A container image the tools run in, with the repository mounted at
+ * `/apps`. It can be pulled and run; failures are mapped to coded errors so
+ * callers never see argument lists or exit codes.
+ */
+export class DockerImage {
+  private readonly options: DockerImageOptions;
 
   /**
-   * @param options Logger, repository directory, and optional overrides of
-   *   the runner, working directory, mounts and hosts.
+   * @param options Image reference, logger, repository directory, and
+   *   optional overrides of the runner, working directory, mounts and hosts.
    */
-  constructor(options: DockerOptions) {
+  constructor(options: DockerImageOptions) {
     this.options = options;
-    this.runner = options.run ?? execRun;
   }
 
   /**
-   * Check that the Docker CLI can be started and answers `docker version`.
+   * The image reference, including the tag.
    *
-   * @throws SemanticReleaseError (`ENODOCKER`) when it cannot.
+   * @returns The reference.
    */
-  async assertAvailable(): Promise<void> {
-    try {
-      await runLogged(
-        this.runner,
-        'docker',
-        ['version'],
-        { cwd: this.options.cwd },
-        this.options.logger,
-      );
-    } catch {
-      throw new SemanticReleaseError(
-        'Docker not available.',
-        'ENODOCKER',
-        'Docker must be installed and on PATH.',
-      );
-    }
+  get reference(): string {
+    return this.options.image;
   }
 
   /**
-   * Pull an image.
+   * Pull the image.
    *
-   * @param image Image reference.
+   * @returns This image, once it is available locally.
    * @throws SemanticReleaseError (`EIMAGEPULLFAILED`) when the pull fails.
    */
-  async pull(image: string): Promise<void> {
+  async pull(): Promise<DockerImage> {
     try {
       await runLogged(
-        this.runner,
+        this.options.run ?? execRun,
         'docker',
-        ['pull', image],
+        ['pull', this.options.image],
         { cwd: this.options.cwd },
         this.options.logger,
       );
     } catch (error) {
       throw new SemanticReleaseError(
-        `Failed to pull Docker image: ${image}`,
+        `Failed to pull Docker image: ${this.options.image}`,
         'EIMAGEPULLFAILED',
         redactCredentials(messageOf(error)),
       );
     }
+    return this;
   }
 
   /**
-   * Run a container to completion with the repository mounted. Credentials
-   * are redacted from every logged line and from the error that is rethrown.
-   * When `options.env` is set, its values are also scrubbed from the failure
-   * message, and a failure of the spawn itself is replaced by a fixed
-   * message, because the runtime can echo a value in its own message.
+   * Run a container of this image to completion with the repository mounted.
+   * Credentials are redacted from every logged line and from the error that
+   * is rethrown. When `options.env` is set, its values are also scrubbed
+   * from the failure message, and a failure of the spawn itself is replaced
+   * by a fixed message, because the runtime can echo a value in its own
+   * message.
    *
-   * @param image Image reference.
    * @param args Arguments for the container.
    * @param options Entrypoint override and environment variables.
    * @returns The trimmed standard output.
    * @throws The runner's error, sanitised.
    */
   async run(
-    image: string,
     args: readonly string[],
     options: DockerRunOptions = {},
   ): Promise<string> {
     const env = options.env ?? {};
-    const hasEnv = Object.keys(env).length > 0;
+    const sanitize =
+      Object.keys(env).length > 0
+        ? (error: unknown) => withheld(error, env)
+        : redactError;
     return runLogged(
-      this.runner,
+      this.options.run ?? execRun,
       'docker',
-      dockerRunArgs(image, args, {
+      dockerRunArgs(this.options.image, args, {
         workdir: this.options.workdir ?? '/apps',
         mounts: this.options.mounts ?? [
           { host: this.options.cwd, container: '/apps', readonly: false },
@@ -237,7 +245,7 @@ export class DockerClient {
       }),
       { cwd: this.options.cwd, env },
       this.options.logger,
-      hasEnv ? (error) => withheld(error, env) : redactError,
+      sanitize,
     );
   }
 }
