@@ -169,7 +169,7 @@ export class HelmConfig {
    * @returns A key-value map or `undefined`.
    */
   getTemplateValues(): Record<string, unknown> | undefined {
-    return this.cfg.templateValues;
+    return this.cfg.templateValues ?? undefined;
   }
 
   /**
@@ -223,7 +223,7 @@ export class HelmConfig {
    * @returns URL string or `undefined`.
    */
   getGhUrl(): string | undefined {
-    return this.cfg.ghPages?.url;
+    return this.cfg.ghPages?.url ?? undefined;
   }
 
   /**
@@ -259,7 +259,7 @@ export class HelmConfig {
    * @returns `oci://…` string or `undefined`.
    */
   getOciRepo(): string | undefined {
-    return this.cfg.ociRepo;
+    return this.cfg.ociRepo ?? undefined;
   }
 
   /**

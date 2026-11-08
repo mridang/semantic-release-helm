@@ -247,6 +247,78 @@ describe('HelmConfig', () => {
   });
 });
 
+describe('HelmConfig with null values from a JSON or YAML config file', () => {
+  const fromFile = (json: string): HelmConfig =>
+    new HelmConfig(JSON.parse(json));
+
+  it('treats null like an unset option for every option with a default', () => {
+    const cfg = fromFile(
+      JSON.stringify({
+        chartPath: 'c',
+        templateValues: null,
+        ociRepo: null,
+        ociInsecure: null,
+        ociUsername: null,
+        ociPassword: null,
+        docsArgs: null,
+        helmImage: null,
+        docsImage: null,
+        ghPages: null,
+      }),
+    );
+    expect({
+      templateValues: cfg.getTemplateValues(),
+      ociEnabled: cfg.isOciEnabled(),
+      ociInsecure: cfg.getOciInsecure(),
+      docsArgs: cfg.getDocsArgs(),
+      helmImage: cfg.getHelmImage(),
+      docsImage: cfg.getDocsImage(),
+      gh: [cfg.isGhEnabled(), cfg.getGhRepo(), cfg.getGhBranch()],
+      ociRepo: cfg.getOciRepo(),
+      ghUrl: cfg.getGhUrl(),
+    }).toEqual({
+      templateValues: undefined,
+      ociEnabled: false,
+      ociInsecure: false,
+      docsArgs: ['--template-files=README.md'],
+      helmImage: 'alpine/helm:3.15.2',
+      docsImage: 'jnorwood/helm-docs:v1.14.2',
+      gh: [true, 'origin', 'gh-pages'],
+      ociRepo: undefined,
+      ghUrl: undefined,
+    });
+  });
+
+  it('treats null ghPages members like unset ones', () => {
+    const cfg = fromFile(
+      '{"chartPath":"c","ghPages":{"enabled":null,"repo":null,"branch":null,"url":null}}',
+    );
+    expect([cfg.isGhEnabled(), cfg.getGhRepo(), cfg.getGhBranch()]).toEqual([
+      true,
+      'origin',
+      'gh-pages',
+    ]);
+  });
+
+  it('keeps false as a real value', () => {
+    const cfg = fromFile(
+      '{"chartPath":"c","ociInsecure":false,"ghPages":{"enabled":false}}',
+    );
+    expect([cfg.getOciInsecure(), cfg.isGhEnabled()]).toEqual([false, false]);
+  });
+
+  it('decides each publish mode from one predicate', () => {
+    expect(fromFile('{"chartPath":"c"}').isOciEnabled()).toBe(false);
+    expect(fromFile('{"chartPath":"c","ociRepo":""}').isOciEnabled()).toBe(
+      false,
+    );
+    expect(
+      fromFile('{"chartPath":"c","ociRepo":"oci://r/c"}').isOciEnabled(),
+    ).toBe(true);
+    expect(fromFile('{"chartPath":"c"}').isGhEnabled()).toBe(true);
+  });
+});
+
 describe('templateSetArgs', () => {
   it('emits one --set per flattened leaf', () => {
     expect(
