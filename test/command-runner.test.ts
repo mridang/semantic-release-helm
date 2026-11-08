@@ -104,3 +104,30 @@ describe('runHostCmd (no mocks, full-stream asserts)', () => {
     }),
   );
 });
+
+describe('runHostCmd failure output that is only whitespace', () => {
+  it(
+    'logs whitespace-only stderr as captured',
+    withTempDir((cwd) => {
+      const { logger, stderr } = captureConsole();
+      const code = 'process.stderr.write("  \\n"); process.exit(3);';
+      const cmd = `${process.execPath} -e ${q(code)}`;
+
+      expect(() => runHostCmd(cmd, cwd, logger)).toThrow();
+      expect(stderr()).toContain('Command failed:');
+      expect(stderr()).toContain('  \n');
+    }),
+  );
+
+  it(
+    'logs nothing extra for empty stdout and stderr',
+    withTempDir((cwd) => {
+      const { logger, stderr } = captureConsole();
+      const cmd = `${process.execPath} -e ${q('process.exit(4);')}`;
+
+      expect(() => runHostCmd(cmd, cwd, logger)).toThrow();
+      expect(stderr().startsWith(`Command failed: ${cmd}\n`)).toBe(true);
+      expect(stderr().split('\n')[1]).toMatch(/^Command failed/);
+    }),
+  );
+});

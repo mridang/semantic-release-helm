@@ -71,3 +71,58 @@ test('DockerImage.shell hands env values to the client by name', async () => {
   await img.shell('true', { PW: 'x' });
   expect(seen).toEqual([{ PW: 'x' }]);
 });
+
+test('DockerImage.run does not set an entrypoint', async () => {
+  const calls: string[] = [];
+  const img = new DockerImage(
+    'alpine:3',
+    '/repo',
+    makeLogger(),
+    new DockerCliClient((cmd) => {
+      calls.push(cmd);
+      return { stdout: '' };
+    }),
+  );
+  await img.run(['echo']);
+  expect(calls[0]).not.toContain('--entrypoint');
+});
+
+test('DockerImage uses the default add-host and workdir', async () => {
+  const calls: string[] = [];
+  const img = new DockerImage(
+    'alpine:3',
+    '/repo',
+    makeLogger(),
+    new DockerCliClient((cmd) => {
+      calls.push(cmd);
+      return { stdout: '' };
+    }),
+  );
+  await img.run(['echo']);
+  expect(calls[0]).toContain('--add-host=host.docker.internal:host-gateway');
+  expect(calls[0]).toContain('--workdir=/apps');
+});
+
+test('DockerImage honours workdir, mounts and add-host overrides', async () => {
+  const calls: string[] = [];
+  const img = new DockerImage(
+    'alpine:3',
+    '/repo',
+    makeLogger(),
+    new DockerCliClient((cmd) => {
+      calls.push(cmd);
+      return { stdout: '' };
+    }),
+    {
+      workdir: '/work',
+      mounts: [{ host: '/data', container: '/mnt', readonly: true }],
+      addHosts: ['db:10.0.0.1'],
+    },
+  );
+  await img.run(['echo']);
+  expect(calls[0]).toContain('--workdir=/work');
+  expect(calls[0]).toContain('--volume=/data:/mnt:ro');
+  expect(calls[0]).toContain('--add-host=db:10.0.0.1');
+  expect(calls[0]).not.toContain('/repo');
+  expect(calls[0]).not.toContain('host.docker.internal');
+});
