@@ -163,3 +163,26 @@ describe('runHostCmd credential redaction', () => {
     }),
   );
 });
+
+describe('runHostCmd rethrown error', () => {
+  it(
+    'carries no credential in its message, stdout or stderr',
+    withTempDir((cwd) => {
+      const { logger } = captureConsole();
+      const u = 'https://u:p@ss@host/x';
+      const cmd = `${process.execPath} -e ${q(`console.log(${q(u)}); console.error(${q(u)}); process.exit(3)`)}`;
+      const failure = (() => {
+        try {
+          runHostCmd(cmd, cwd, logger);
+          return undefined;
+        } catch (e) {
+          return e;
+        }
+      })();
+      expect(failure).toMatchObject({ status: 3 });
+      const text = JSON.stringify(failure, Object.getOwnPropertyNames(failure));
+      expect(text).not.toContain('ss@host');
+      expect(text).toContain('https://***@host/x');
+    }),
+  );
+});

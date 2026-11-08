@@ -158,3 +158,90 @@ test('DockerCliClient.run with env removes the value from an ordinary failure me
   ).rejects.toThrow('login failed for *** at registry');
   expect(logs).toEqual(['login failed for *** at registry']);
 });
+
+test('DockerCliClient logs and rethrows without credentials in the command or error', async () => {
+  const logs: string[] = [];
+  const url = 'oci://u:tok3nvalue@localhost:5000/charts';
+  const client = new DockerCliClient(() => {
+    throw new Error(`push to ${url} failed`);
+  });
+  const failure = await client
+    .run('alpine:3', ['push', url], {
+      cwd: '/repo',
+      logger: { log: (m) => logs.push(m), error: (m) => logs.push(m) },
+    })
+    .then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+  expect(logs.join('\n')).not.toContain('tok3nvalue');
+  expect(String((failure as Error).message)).not.toContain('tok3nvalue');
+});
+
+test('DockerCliClient.run with env keeps short values from mangling the message', async () => {
+  const client = new DockerCliClient(() => {
+    throw new Error('Command failed: unauthorized');
+  });
+  await expect(
+    client.run('alpine:3', ['true'], {
+      cwd: '/repo',
+      env: { PW: 'a' },
+      logger: { log: () => {}, error: () => {} },
+    }),
+  ).rejects.toThrow('Command failed: unauthorized');
+});
+
+test('DockerCliClient.run with env replaces an empty or non-Error failure with a fixed message', async () => {
+  const run = (thrown: unknown) =>
+    new DockerCliClient(() => {
+      throw thrown;
+    }).run('alpine:3', ['true'], {
+      cwd: '/repo',
+      env: { PW: 'secretvalue' },
+      logger: { log: () => {}, error: () => {} },
+    });
+  await expect(run('')).rejects.toThrow('environment variable(s) PW');
+  await expect(run(new Error(''))).rejects.toThrow(
+    'environment variable(s) PW',
+  );
+});
+
+test('DockerCliClient.run with env scrubs encoded forms and keeps code and status', async () => {
+  const value = 'p@ss word';
+  const failure = await new DockerCliClient(() => {
+    throw Object.assign(
+      new Error(
+        `bad ${encodeURIComponent(value)} and ${Buffer.from(value).toString('base64')} and ${value}`,
+      ),
+      { code: 'E_X', status: 9 },
+    );
+  })
+    .run('alpine:3', ['true'], {
+      cwd: '/repo',
+      env: { PW: value },
+      logger: { log: () => {}, error: () => {} },
+    })
+    .then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+  expect(failure).toMatchObject({
+    message: 'bad *** and *** and ***',
+    code: 'E_X',
+    status: 9,
+  });
+});
+
+test('DockerCliClient.run with env names the code of a spawn failure', async () => {
+  await expect(
+    new DockerCliClient(() => {
+      throw Object.assign(new Error('Received sec\u0000ret'), {
+        code: 'ERR_INVALID_ARG_VALUE',
+      });
+    }).run('alpine:3', ['true'], {
+      cwd: '/repo',
+      env: { PW: 'sec\u0000ret' },
+      logger: { log: () => {}, error: () => {} },
+    }),
+  ).rejects.toThrow('(ERR_INVALID_ARG_VALUE)');
+});

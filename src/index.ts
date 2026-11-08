@@ -10,6 +10,7 @@ import type {
 import { HelmIndex } from './helm-index.js';
 import { HelmChart, setChartVersion } from './helm-chart.js';
 import { DockerCliClient } from './docker/cli-client.js';
+import { redactCredentials } from './utils/redact.js';
 import { quoteWord } from './utils/shell.js';
 import type { Logger } from './docker/client.js';
 import { DockerImage } from './docker/image.js';
@@ -187,20 +188,22 @@ export async function verifyConditions(
       runHostCmd(`git remote get-url ${quoteWord(ghRepo)}`, cwd, logger);
     } catch {
       throw new SemanticReleaseError(
-        `Git remote "${ghRepo}" not found.`,
+        `Git remote "${redactCredentials(ghRepo)}" not found.`,
         'ENOREMOTE',
-        `gh-pages mode requires a configured remote named "${ghRepo}".`,
+        `gh-pages mode requires a configured remote named "${redactCredentials(ghRepo)}".`,
       );
     }
 
     try {
       runHostCmd(`git ls-remote --heads ${quoteWord(ghRepo)}`, cwd, logger);
-      logger.log(`verifyConditions: remote "${ghRepo}" is accessible`);
+      logger.log(
+        `verifyConditions: remote "${redactCredentials(ghRepo)}" is accessible`,
+      );
     } catch {
       throw new SemanticReleaseError(
-        `Cannot access remote repository "${ghRepo}".`,
+        `Cannot access remote repository "${redactCredentials(ghRepo)}".`,
         'EREMOTEACCESS',
-        `Check git credentials and network connectivity to ${ghRepo}.`,
+        `Check git credentials and network connectivity to ${redactCredentials(ghRepo)}.`,
       );
     }
   }
@@ -209,7 +212,7 @@ export async function verifyConditions(
     const haveUser = cfg.hasOciUser();
     const havePass = cfg.hasOciPass();
     logger.log(
-      `verifyConditions: OCI enabled -> repo="${cfg.getOciRepo()}", ` +
+      `verifyConditions: OCI enabled -> repo="${redactCredentials(cfg.getOciRepo() ?? '')}", ` +
         `insecure=${cfg.getOciInsecure()}, ` +
         `usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
@@ -374,7 +377,7 @@ export async function publish(
     const havePass = cfg.hasOciPass();
 
     logger.log(
-      `publish: OCI mode -> repo="${cfg.getOciRepo()}", ` +
+      `publish: OCI mode -> repo="${redactCredentials(cfg.getOciRepo() ?? '')}", ` +
         `insecure=${cfg.getOciInsecure()}, ` +
         `usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
@@ -390,7 +393,7 @@ export async function publish(
     await runDockerShell(helmImage, script, cwd, logger, env);
 
     logger.log(
-      `{ "helm": { "pushed": ${files.length}, "repo": "${cfg.getOciRepo()}" } }`,
+      `{ "helm": { "pushed": ${files.length}, "repo": "${redactCredentials(cfg.getOciRepo() ?? '')}" } }`,
     );
   }
 

@@ -2,17 +2,13 @@
 import { execSync } from 'node:child_process';
 import type { Logger } from './docker/client.js';
 import { isRecord, stringAt } from './utils/object.js';
+import { redactCredentials, redactError } from './utils/redact.js';
 
 /**
- * Hide the user and password of any URL in a piece of log text, so a remote
- * such as `https://x-access-token:TOKEN@host/o/r.git` never reaches a log.
- *
- * @param text Text about to be logged.
- * @returns The text with `scheme://user:pass@` reduced to `scheme://***@`.
+ * Largest output captured from a command, 64 MiB, so a long listing is
+ * not mistaken for a failure.
  */
-function redactCredentials(text: string): string {
-  return text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi, '$1***@');
-}
+const MAX_BUFFER = 64 * 1024 * 1024;
 
 /**
  * Log captured output when it has content: trimmed if that leaves text,
@@ -46,13 +42,19 @@ function logCaptured(text: string, logger: Logger): void {
  * @param cwd Working directory for the command.
  * @param logger semantic-release logger used for structured logs.
  * @returns Trimmed stdout of the command.
- * @throws Any error thrown by execSync is rethrown after being logged.
+ * @throws The error thrown by execSync, with credentials redacted from its
+ *   message, stdout and stderr, after it has been logged.
  */
 export function runHostCmd(cmd: string, cwd: string, logger: Logger): string {
   logger.log(`$ ${redactCredentials(cmd)}`);
 
   try {
-    const out = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf8' });
+    const out = execSync(cmd, {
+      cwd,
+      stdio: 'pipe',
+      encoding: 'utf8',
+      maxBuffer: MAX_BUFFER,
+    });
     const trimmed = out.trim();
 
     logger.log(trimmed.length > 0 ? redactCredentials(trimmed) : '(no output)');
@@ -71,6 +73,6 @@ export function runHostCmd(cmd: string, cwd: string, logger: Logger): string {
       }
     }
 
-    throw err;
+    throw redactError(err);
   }
 }
