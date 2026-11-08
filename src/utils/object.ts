@@ -22,33 +22,3 @@ export function stringAt(
   const value = record[key];
   return typeof value === 'string' ? value : undefined;
 }
-
-/**
- * Read a boolean property of an untrusted object.
- *
- * @param record The object.
- * @param key Property name.
- * @returns The value when it is a boolean, otherwise undefined.
- */
-export function booleanAt(
-  record: Readonly<Record<string, unknown>>,
-  key: string,
-): boolean | undefined {
-  const value = record[key];
-  return typeof value === 'boolean' ? value : undefined;
-}
-
-/**
- * Read a number property of an untrusted object.
- *
- * @param record The object.
- * @param key Property name.
- * @returns The value when it is a number, otherwise undefined.
- */
-export function numberAt(
-  record: Readonly<Record<string, unknown>>,
-  key: string,
-): number | undefined {
-  const value = record[key];
-  return typeof value === 'number' ? value : undefined;
-}
