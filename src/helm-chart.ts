@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import SemanticReleaseError from '@semantic-release/error';
 import * as yaml from 'yaml';
 import { isRecord } from './utils/object.js';
 
@@ -131,14 +132,28 @@ export class HelmChart {
 
 /**
  * Return a new Chart.yaml string with only the `version` field updated. The
- * function parses the input YAML, shallow-copies the object to avoid losing
- * unknown fields, overrides `version`, and stringifies the result.
+ * document is edited in place, so comments, quoting, anchors and key order
+ * survive. A file that is not a YAML mapping is refused rather than replaced.
  *
  * @param rawYaml Raw Chart.yaml content.
  * @param version Version string to set.
  * @returns Updated YAML string.
+ * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) when the file is empty or
+ *   not a mapping; the YAML parse error when it is malformed.
  */
 export function setChartVersion(rawYaml: string, version: string): string {
-  const parsed: unknown = yaml.parse(rawYaml);
-  return yaml.stringify({ ...(isRecord(parsed) ? parsed : {}), version });
+  const doc = yaml.parseDocument(rawYaml);
+  const [parseError] = doc.errors;
+  if (parseError) {
+    throw parseError;
+  }
+  if (!yaml.isMap(doc.contents)) {
+    throw new SemanticReleaseError(
+      'Chart.yaml is not a YAML mapping.',
+      'EINVALIDCHARTYAML',
+      'Chart.yaml must be a mapping with at least a name and a version.',
+    );
+  }
+  doc.set('version', version);
+  return String(doc);
 }

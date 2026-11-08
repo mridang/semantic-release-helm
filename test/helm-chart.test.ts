@@ -185,12 +185,34 @@ describe('setChartVersion', () => {
     });
   });
 
-  it('adds a version when the file is empty or not a mapping', () => {
-    expect(yaml.parse(setChartVersion('', '1.0.0'))).toEqual({
+  it('keeps comments, quoting and blank lines', () => {
+    const out = setChartVersion(
+      '# my chart\napiVersion: v2\nname: "demo"\n\nversion: 0.1.0 # bumped by CI\n',
+      '2.0.0',
+    );
+    expect(out).toBe(
+      '# my chart\napiVersion: v2\nname: "demo"\n\nversion: 2.0.0 # bumped by CI\n',
+    );
+  });
+
+  it('adds a version when the mapping has none', () => {
+    expect(yaml.parse(setChartVersion('name: demo\n', '1.0.0'))).toEqual({
+      name: 'demo',
       version: '1.0.0',
     });
-    expect(yaml.parse(setChartVersion('- a\n', '1.0.0'))).toEqual({
-      version: '1.0.0',
-    });
+  });
+
+  it.each([
+    ['empty', ''],
+    ['a list', '- a\n'],
+    ['a scalar', 'just text\n'],
+  ])('refuses a Chart.yaml that is %s', (_label, content) => {
+    expect(() => setChartVersion(content, '1.0.0')).toThrow(
+      expect.objectContaining({ code: 'EINVALIDCHARTYAML' }),
+    );
+  });
+
+  it('rethrows a YAML syntax error', () => {
+    expect(() => setChartVersion('a: [\n', '1.0.0')).toThrow();
   });
 });
