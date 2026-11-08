@@ -270,6 +270,31 @@ describe('setChartVersion', () => {
     });
   });
 
+  it.each([
+    ['blank', 'name: d\nversion:\nx: 1\n', 'name: d\nversion: 2.0.0\nx: 1\n'],
+    [
+      'blank at the end of the file',
+      'name: d\nversion:',
+      'name: d\nversion: 2.0.0',
+    ],
+    ['blank before a comment', 'version: # todo\n', 'version: 2.0.0 # todo\n'],
+    ['~', 'version: ~\n', 'version: 2.0.0\n'],
+    ['null', 'version: null\n', 'version: 2.0.0\n'],
+    ['Null', 'version: Null\n', 'version: 2.0.0\n'],
+    ['NULL', 'version: NULL # x\n', 'version: 2.0.0 # x\n'],
+  ])('replaces a %s version', (_label, raw, expected) => {
+    expect(setChartVersion(raw, '2.0.0')).toBe(expected);
+  });
+
+  it('replaces a blank version in a flow mapping', () => {
+    expect(
+      yaml.parse(setChartVersion('{name: d, version: }\n', '2.0.0')),
+    ).toEqual({
+      name: 'd',
+      version: '2.0.0',
+    });
+  });
+
   it('refuses a block scalar version', () => {
     expect(() => setChartVersion('version: |\n  1.0.0\n', '2.0.0')).toThrow(
       expect.objectContaining({ code: 'EINVALIDCHARTYAML' }),

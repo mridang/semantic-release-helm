@@ -126,6 +126,22 @@ function escapeForRegExp(text: string): string {
 }
 
 /**
+ * The text to put where a blank value was (`version:`, `version: # note`,
+ * `{version:}`): the scalar, with a space before it when the colon touches it
+ * and a space after it when a comment follows.
+ *
+ * @param text The whole Chart.yaml text.
+ * @param at Where the blank value is.
+ * @param scalar The version as a YAML scalar.
+ * @returns The text to insert.
+ */
+function blankValue(text: string, at: number, scalar: string): string {
+  const before = /\s/.test(text.charAt(at - 1)) ? '' : ' ';
+  const after = text.charAt(at) === '#' ? ' ' : '';
+  return `${before}${scalar}${after}`;
+}
+
+/**
  * Render a version as a YAML scalar in the style of the one it replaces.
  *
  * @param version The new version.
@@ -212,7 +228,11 @@ export function setChartVersion(
     );
   }
   const [start, end] = existing.range;
-  return `${rawYaml.slice(0, start)}${versionScalar(version, existing.type)}${rawYaml.slice(end)}`;
+  const scalar = versionScalar(version, existing.type);
+  if (start === end) {
+    return `${rawYaml.slice(0, start)}${blankValue(rawYaml, start, scalar)}${rawYaml.slice(end)}`;
+  }
+  return `${rawYaml.slice(0, start)}${scalar}${rawYaml.slice(end)}`;
 }
 
 /**
