@@ -28,8 +28,6 @@ describe('HelmConfig', () => {
         host: cfg.getOciHost(),
         port: cfg.getOciPort(),
         hostPort: cfg.getOciHostPort(),
-        plainHttpFlag: cfg.getOciPlainHttpFlag(),
-        insecureLoginFlag: cfg.getOciInsecureLoginFlag(),
         username: cfg.getOciUsername(),
         password: cfg.getOciPassword(),
         hasUser: cfg.hasOciUser(),
@@ -53,8 +51,6 @@ describe('HelmConfig', () => {
         host: undefined,
         port: undefined,
         hostPort: undefined,
-        plainHttpFlag: '',
-        insecureLoginFlag: '',
         username: undefined,
         password: undefined,
         hasUser: false,
@@ -119,8 +115,6 @@ describe('HelmConfig', () => {
       host: cfg.getOciHost(),
       port: cfg.getOciPort(),
       hostPort: cfg.getOciHostPort(),
-      plainHttpFlag: cfg.getOciPlainHttpFlag(),
-      insecureLoginFlag: cfg.getOciInsecureLoginFlag(),
     }).toEqual({
       enabled: true,
       repo: 'oci://ghcr.io/my-org/helm',
@@ -128,8 +122,6 @@ describe('HelmConfig', () => {
       host: 'ghcr.io',
       port: undefined,
       hostPort: 'ghcr.io',
-      plainHttpFlag: '',
-      insecureLoginFlag: '',
     });
   });
 
@@ -159,12 +151,8 @@ describe('HelmConfig', () => {
 
     expect({
       insecure: cfg.getOciInsecure(),
-      plainHttpFlag: cfg.getOciPlainHttpFlag(),
-      insecureLoginFlag: cfg.getOciInsecureLoginFlag(),
     }).toEqual({
       insecure: true,
-      plainHttpFlag: ' --plain-http',
-      insecureLoginFlag: ' --insecure',
     });
   });
 

@@ -17,16 +17,6 @@ export interface ChartEntry {
 }
 
 /**
- * In-memory representation of a Helm repository index document. The
- * structure mirrors Helm's index.yaml format.
- */
-export interface HelmIndexDoc {
-  apiVersion: 'v1';
-  entries: Record<string, ChartEntry[]>;
-  generated?: string;
-}
-
-/**
  * Chart.yaml keys the index writer computes itself, so they are never copied
  * through from the chart.
  */

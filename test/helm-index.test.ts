@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'yaml';
 import { HelmChart } from '../src/helm-chart.js';
-import { HelmIndex, ChartEntry, HelmIndexDoc } from '../src/helm-index.js';
+import { HelmIndex, ChartEntry } from '../src/helm-index.js';
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { withTempDir } from './utils/tmpdir.js';
 import { sha256OfFile } from './utils/filehash.js';
@@ -40,6 +40,12 @@ function writeTgz(
   fs.mkdirSync(path.dirname(tgz), { recursive: true });
   fs.writeFileSync(tgz, content, 'utf8');
   return tgz;
+}
+
+interface HelmIndexDoc {
+  apiVersion: 'v1';
+  entries: Record<string, ChartEntry[]>;
+  generated?: string;
 }
 
 function readIndex(idxPath: string): HelmIndexDoc {

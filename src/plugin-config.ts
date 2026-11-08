@@ -341,22 +341,4 @@ export class HelmConfig {
     if (!host) return undefined;
     return typeof port === 'number' ? `${host}:${port}` : host;
   }
-
-  /**
-   * Optional `helm push` flag for plain HTTP when insecure is on.
-   *
-   * @returns `' --plain-http'` or an empty string.
-   */
-  getOciPlainHttpFlag(): string {
-    return this.getOciInsecure() ? ' --plain-http' : '';
-  }
-
-  /**
-   * Optional `helm registry login` flag for insecure mode.
-   *
-   * @returns `' --insecure'` or an empty string.
-   */
-  getOciInsecureLoginFlag(): string {
-    return this.getOciInsecure() ? ' --insecure' : '';
-  }
 }
