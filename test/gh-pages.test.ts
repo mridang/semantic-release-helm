@@ -2,7 +2,11 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
-import { commitIfStaged, hasStagedChanges } from '../src/gh-pages.js';
+import {
+  commitIfStaged,
+  hasStagedChanges,
+  repositoryWebBase,
+} from '../src/gh-pages.js';
 import { withTempDir } from './utils/tmpdir.js';
 
 const git = (cwd: string, ...args: string[]): string =>
@@ -83,4 +87,29 @@ describe('commitIfStaged', () => {
       expect(commitIfStaged(dir, dir, 'm', author, l)).toBe(true);
     }),
   );
+});
+
+describe('repositoryWebBase', () => {
+  it.each([
+    ['https://github.com/o/r.git', 'https://github.com/o/r'],
+    ['https://github.com/o/r', 'https://github.com/o/r'],
+    ['git@github.com:o/r.git', 'https://github.com/o/r'],
+    ['ssh://git@github.com/o/r.git', 'https://github.com/o/r'],
+    ['ssh://git@github.com:2222/o/r.git', 'https://github.com/o/r'],
+    ['git://github.com/o/r.git', 'https://github.com/o/r'],
+    [
+      'https://x-access-token:TOKEN@github.com/o/r.git',
+      'https://github.com/o/r',
+    ],
+    ['https://user@ghe.example.test/o/r.git/', 'https://ghe.example.test/o/r'],
+    ['git@ghe.example.test:o/r.git\n', 'https://ghe.example.test/o/r'],
+  ])('maps %s', (remote, expected) => {
+    expect(repositoryWebBase(remote)).toBe(expected);
+  });
+
+  it('never lets a token reach the result', () => {
+    expect(
+      repositoryWebBase('https://x-access-token:SECRET@github.com/o/r.git'),
+    ).not.toContain('SECRET');
+  });
 });

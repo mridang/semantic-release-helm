@@ -64,3 +64,23 @@ export function commitIfStaged(
   );
   return true;
 }
+
+/**
+ * Turn a git remote URL into the public web base of its repository, for
+ * building release download links. Credentials in the URL (`user:token@`)
+ * and the port are dropped, and `https://`, `ssh://`, `git://` and
+ * scp-style (`git@host:owner/repo`) remotes are understood, so a token can
+ * never reach a published index.
+ *
+ * @param remoteUrl Output of `git remote get-url`.
+ * @returns A URL such as `https://github.com/owner/repo`.
+ */
+export function repositoryWebBase(remoteUrl: string): string {
+  const trimmed = remoteUrl.trim();
+  const scp = /^(?:[^@/:]+@)?([^:/@]+):(?!\/\/)(.+)$/.exec(trimmed);
+  const { host, pathname } = URL.canParse(trimmed)
+    ? { host: new URL(trimmed).hostname, pathname: new URL(trimmed).pathname }
+    : { host: scp?.[1] ?? '', pathname: scp?.[2] ?? trimmed };
+  const repoPath = pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/, '');
+  return `https://${host || 'github.com'}/${repoPath}`;
+}

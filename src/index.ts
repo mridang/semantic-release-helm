@@ -15,7 +15,7 @@ import { DockerImage } from './docker/image.js';
 import { runHostCmd } from './command-runner.js';
 import { HelmConfig, HelmPluginConfig } from './plugin-config.js';
 import { DockerHelmDocs } from './helm-docs.js';
-import { commitIfStaged } from './gh-pages.js';
+import { commitIfStaged, repositoryWebBase } from './gh-pages.js';
 import { buildOciScript, OCI_PASSWORD_ENV } from './oci-publish.js';
 import { flattenRecord } from './utils/object.js';
 
@@ -436,16 +436,13 @@ export async function publish(
       cwd,
       encoding: 'utf8',
     }).trim();
-    const repoPath = remoteUrl
-      .replace(/^git@github\.com:/, '')
-      .replace(/^https:\/\/github\.com\//, '')
-      .replace(/\.git$/, '');
+    const repoBase = repositoryWebBase(remoteUrl);
 
     const indexDoc = files.reduce((doc, tgz) => {
       const abs = path.isAbsolute(tgz) ? tgz : path.join(cwd, tgz);
       const filename = path.basename(abs);
       const version = filename.match(/-(\d+\.\d+\.\d+)\.tgz$/)?.[1] || '0.0.0';
-      const githubReleaseUrl = `https://github.com/${repoPath}/releases/download/v${version}/${filename}`;
+      const githubReleaseUrl = `${repoBase}/releases/download/v${version}/${filename}`;
 
       return doc.append(chart, abs, '', { urls: [githubReleaseUrl] });
     }, HelmIndex.fromFile(indexPath));
