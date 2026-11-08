@@ -1,5 +1,13 @@
+import { isRecord } from './utils/object.js';
+
 // noinspection JSUnusedGlobalSymbols
 export interface HelmPluginConfig {
+  /**
+   * Unrecognised keys are tolerated, as they were when this type extended
+   * semantic-release's untyped `PluginConfig`.
+   */
+  [key: string]: unknown;
+
   /**
    * Path to the chart directory that contains `Chart.yaml`.
    * Example: `"charts/app"`.
@@ -82,6 +90,44 @@ export interface HelmPluginConfig {
      */
     branch?: string;
   };
+}
+
+/**
+ * Flatten nested objects into dotted keys with string values. Arrays and
+ * other non-object values are not descended into; they are stringified.
+ *
+ * @param record The object to flatten.
+ * @param prefix Dotted prefix for the keys, empty at the top level.
+ * @returns A flat map such as `{ 'image.tag': 'v1' }`.
+ */
+function flattenRecord(
+  record: Readonly<Record<string, unknown>>,
+  prefix = '',
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(record).flatMap(([key, value]) => {
+      const dotted = prefix.length ? `${prefix}.${key}` : key;
+      return isRecord(value)
+        ? Object.entries(flattenRecord(value, dotted))
+        : [[dotted, String(value)]];
+    }),
+  );
+}
+
+/**
+ * Turn template values into `helm template` arguments: one `--set` and one
+ * `key=value` per flattened leaf.
+ *
+ * @param values The configured template values, if any.
+ * @returns Arguments to append to the command, empty when there are none.
+ */
+export function templateSetArgs(
+  values: Readonly<Record<string, unknown>> | undefined,
+): string[] {
+  return Object.entries(flattenRecord(values ?? {})).flatMap(([key, value]) => [
+    '--set',
+    `${key}=${value}`,
+  ]);
 }
 
 /**

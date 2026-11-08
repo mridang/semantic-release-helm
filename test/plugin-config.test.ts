@@ -1,5 +1,9 @@
 import { describe, it, expect } from '@jest/globals';
-import { HelmConfig, HelmPluginConfig } from '../src/plugin-config.js';
+import {
+  HelmConfig,
+  HelmPluginConfig,
+  templateSetArgs,
+} from '../src/plugin-config.js';
 import { withEnv } from './utils/withenv.js';
 
 describe('HelmConfig', () => {
@@ -240,5 +244,37 @@ describe('HelmConfig', () => {
       chartPath: 'charts/svc',
       ociRepo: 'oci://registry.acme.io/acme/svc',
     });
+  });
+});
+
+describe('templateSetArgs', () => {
+  it('emits one --set per flattened leaf', () => {
+    expect(
+      templateSetArgs({
+        image: { tag: 'v1', pull: { policy: 'Always' } },
+        n: 3,
+      }),
+    ).toEqual([
+      '--set',
+      'image.tag=v1',
+      '--set',
+      'image.pull.policy=Always',
+      '--set',
+      'n=3',
+    ]);
+  });
+
+  it('stringifies arrays and null without descending', () => {
+    expect(templateSetArgs({ list: ['a', 'b'], nothing: null })).toEqual([
+      '--set',
+      'list=a,b',
+      '--set',
+      'nothing=null',
+    ]);
+  });
+
+  it('is empty without values', () => {
+    expect(templateSetArgs(undefined)).toEqual([]);
+    expect(templateSetArgs({})).toEqual([]);
   });
 });

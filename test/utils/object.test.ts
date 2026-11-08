@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
-import { flattenRecord, isRecord, stringAt } from '../../src/utils/object.js';
+import { isRecord, stringAt } from '../../src/utils/object.js';
 
 describe('isRecord', () => {
   it('accepts plain objects', () => {
@@ -24,27 +24,5 @@ describe('stringAt', () => {
   it('is undefined for a missing or non-string property', () => {
     expect(stringAt({ a: 1 }, 'a')).toBeUndefined();
     expect(stringAt({}, 'a')).toBeUndefined();
-  });
-});
-
-describe('flattenRecord', () => {
-  it('flattens nested objects into dotted keys', () => {
-    expect(
-      flattenRecord({ image: { tag: 'v1', pull: { policy: 'Always' } } }),
-    ).toEqual({ 'image.tag': 'v1', 'image.pull.policy': 'Always' });
-  });
-
-  it('stringifies scalars, arrays and null without descending', () => {
-    expect(
-      flattenRecord({ n: 3, b: true, list: ['a', 'b'], nothing: null }),
-    ).toEqual({ n: '3', b: 'true', list: 'a,b', nothing: 'null' });
-  });
-
-  it('applies a prefix', () => {
-    expect(flattenRecord({ a: 1 }, 'root')).toEqual({ 'root.a': '1' });
-  });
-
-  it('returns an empty map for an empty object', () => {
-    expect(flattenRecord({})).toEqual({});
   });
 });

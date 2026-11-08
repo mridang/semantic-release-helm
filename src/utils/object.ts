@@ -24,23 +24,31 @@ export function stringAt(
 }
 
 /**
- * Flatten nested objects into dotted keys with string values. Arrays and
- * other non-object values are not descended into; they are stringified.
+ * Read a boolean property of an untrusted object.
  *
- * @param record The object to flatten.
- * @param prefix Dotted prefix for the keys, empty at the top level.
- * @returns A flat map such as `{ 'image.tag': 'v1' }`.
+ * @param record The object.
+ * @param key Property name.
+ * @returns The value when it is a boolean, otherwise undefined.
  */
-export function flattenRecord(
+export function booleanAt(
   record: Readonly<Record<string, unknown>>,
-  prefix = '',
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(record).flatMap(([key, value]) => {
-      const dotted = prefix.length ? `${prefix}.${key}` : key;
-      return isRecord(value)
-        ? Object.entries(flattenRecord(value, dotted))
-        : [[dotted, String(value)]];
-    }),
-  );
+  key: string,
+): boolean | undefined {
+  const value = record[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+/**
+ * Read a number property of an untrusted object.
+ *
+ * @param record The object.
+ * @param key Property name.
+ * @returns The value when it is a number, otherwise undefined.
+ */
+export function numberAt(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' ? value : undefined;
 }

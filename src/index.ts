@@ -13,7 +13,11 @@ import { DockerCliClient, quoteWord } from './docker/cli-client.js';
 import type { Logger } from './docker/client.js';
 import { DockerImage } from './docker/image.js';
 import { runHostCmd } from './command-runner.js';
-import { HelmConfig, HelmPluginConfig } from './plugin-config.js';
+import {
+  HelmConfig,
+  HelmPluginConfig,
+  templateSetArgs,
+} from './plugin-config.js';
 import { DockerHelmDocs } from './helm-docs.js';
 import {
   buildWorktreeAddCommand,
@@ -21,9 +25,15 @@ import {
   repositoryWebBase,
 } from './gh-pages.js';
 import { buildOciScript, OCI_PASSWORD_ENV } from './oci-publish.js';
-import { flattenRecord } from './utils/object.js';
 
-export type { ChartYaml } from './helm-chart.js';
+/**
+ * Minimal shape of a Chart.yaml document.
+ */
+export interface ChartYaml {
+  name: string;
+  version?: string;
+  [key: string]: string | number | boolean | object | undefined;
+}
 
 const COMMIT_NAME = 'semantic-release-bot';
 const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
@@ -271,9 +281,7 @@ export async function prepare(
       'template',
       'sr-check',
       cfg.getChartPath(),
-      ...Object.entries(flattenRecord(cfg.getTemplateValues() ?? {})).flatMap(
-        ([key, value]) => ['--set', `${key}=${value}`],
-      ),
+      ...templateSetArgs(cfg.getTemplateValues()),
     ],
     cwd,
     logger,
@@ -502,4 +510,4 @@ export async function publish(
 }
 
 // noinspection JSUnusedGlobalSymbols
-export default { verifyConditions, prepare, publish };
+export default { verifyConditions, prepare, publish } as const;
