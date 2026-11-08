@@ -2,7 +2,7 @@ import { Console } from 'node:console';
 import { Writable } from 'node:stream';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
-import { runLogged } from '../src/command-runner.js';
+import { redactError, runLogged } from '../src/command-runner.js';
 import { run } from '../src/utils/exec.js';
 import { withTempDir } from './utils/tmpdir.js';
 
@@ -192,4 +192,27 @@ describe('runLogged credential redaction', () => {
       expect(text).toContain('https://***@host/x');
     }),
   );
+});
+
+describe('redactError', () => {
+  it('redacts message, stdout and stderr and keeps code and status', () => {
+    const original = Object.assign(new Error('failed https://u:pw0rd@h/x'), {
+      code: 'E1',
+      status: 3,
+      stdout: 'out https://u:pw0rd@h/x',
+      stderr: 'err ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+    });
+    const copy = redactError(original);
+    expect(copy.message).toBe('failed https://***@h/x');
+    expect(copy).toMatchObject({
+      code: 'E1',
+      status: 3,
+      stdout: 'out https://***@h/x',
+      stderr: 'err ***',
+    });
+  });
+
+  it('wraps a thrown string', () => {
+    expect(redactError('https://u:pw0rd@h/x').message).toBe('https://***@h/x');
+  });
 });

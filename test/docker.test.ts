@@ -259,4 +259,11 @@ describe('DockerImage.run', () => {
       [...lines, String((failure as Error).message)].join('\n'),
     ).not.toContain('sec');
   });
+
+  it('with env scrubs the value from the output of a successful run', async () => {
+    const { image, lines } = make(() => 'login with hunter2value ok\n');
+    const out = await image.run(['true'], { env: { PW: 'hunter2value' } });
+    expect(out).toBe('login with *** ok');
+    expect(lines.join('\n')).not.toContain('hunter2value');
+  });
 });

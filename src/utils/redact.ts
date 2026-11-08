@@ -1,7 +1,3 @@
-import SemanticReleaseError from '@semantic-release/error';
-import { codeOf, messageOf } from './error.js';
-import { isRecord } from './object.js';
-
 /**
  * Hide credentials in a piece of text that is about to be logged or put in an
  * error message. This is a backstop that works on the shape of the text; the
@@ -30,31 +26,4 @@ export function redactCredentials(text: string): string {
       /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{16,})/g,
       '***',
     );
-}
-
-/**
- * A copy of a thrown value that is safe to log and rethrow: its message,
- * `stdout` and `stderr` are redacted, and its `code` and `status` are kept.
- * A `SemanticReleaseError` is returned as is, because its text is written
- * by this plugin.
- *
- * @param error Whatever was thrown.
- * @returns An error whose text holds no credentials.
- */
-export function redactError(error: unknown): Error {
-  if (error instanceof SemanticReleaseError) {
-    return error;
-  }
-  const text = (key: string): Record<string, string> => {
-    const value = isRecord(error) ? error[key] : undefined;
-    return typeof value === 'string' ? { [key]: redactCredentials(value) } : {};
-  };
-  const code = codeOf(error);
-  const status = isRecord(error) ? error.status : undefined;
-  return Object.assign(new Error(redactCredentials(messageOf(error))), {
-    ...(code === undefined ? {} : { code }),
-    ...(typeof status === 'number' ? { status } : {}),
-    ...text('stdout'),
-    ...text('stderr'),
-  });
 }

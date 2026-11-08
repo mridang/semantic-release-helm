@@ -1,9 +1,13 @@
 import SemanticReleaseError from '@semantic-release/error';
-import { runLogged, type CommandContext } from './command-runner.js';
+import {
+  redactError,
+  runLogged,
+  type CommandContext,
+} from './command-runner.js';
 import { codeOf, messageOf, statusOf } from './utils/error.js';
-import { run as execRun } from './utils/exec.js';
+import { run as execRun, type Runner } from './utils/exec.js';
 import { isRecord } from './utils/object.js';
-import { redactCredentials, redactError } from './utils/redact.js';
+import { redactCredentials } from './utils/redact.js';
 
 /**
  * A host directory mounted into the container.
@@ -93,12 +97,31 @@ function echoForms(value: string): readonly string[] {
 }
 
 /**
+ * Remove the values of environment variables from a piece of text, in the
+ * forms the runtime might echo them. Values shorter than three characters
+ * are left alone, because removing them would mangle the whole text.
+ *
+ * @param text Text about to be logged or put in an error.
+ * @param env The environment of the run.
+ * @returns The text with the values replaced, and credentials in URLs hidden.
+ */
+function scrubValues(
+  text: string,
+  env: Readonly<Record<string, string>>,
+): string {
+  return redactCredentials(
+    Object.values(env)
+      .filter((value) => value.length >= 3)
+      .flatMap(echoForms)
+      .reduce((acc, form) => acc.split(form).join('***'), text),
+  );
+}
+
+/**
  * The error to report when a run that carried environment variables fails.
- * Values shorter than three characters are not scrubbed, because removing
- * them would mangle the whole message. A failure of the spawn itself (an
- * `ERR_*` code) gets a fixed message that names the variables and the code,
- * and an empty message is replaced by a fixed one. `code` and `status` are
- * kept.
+ * A failure of the spawn itself (an `ERR_*` code) gets a fixed message that
+ * names the variables and the code, and an empty message is replaced by a
+ * fixed one. `code` and `status` are kept.
  *
  * @param error What the runner threw.
  * @param env The environment of the failed run.
@@ -110,25 +133,31 @@ function withheld(
 ): Error {
   const names = Object.keys(env).join(', ');
   const code = codeOf(error);
-  const scrub = (text: string): string =>
-    redactCredentials(
-      Object.values(env)
-        .filter((value) => value.length >= 3)
-        .flatMap(echoForms)
-        .reduce((acc, form) => acc.split(form).join('***'), text),
-    );
-  const scrubbed =
-    isRecord(error) && error.message === '' ? '' : scrub(messageOf(error));
-  const safe = code?.startsWith('ERR_')
-    ? `Could not start docker (${code}) with the environment variable(s) ${names}; the message is withheld because it may contain their values.`
-    : scrubbed.trim().length > 0
-      ? scrubbed
-      : `docker failed without a message; environment variable(s) ${names} were passed.`;
   const status = statusOf(error);
-  return Object.assign(new Error(safe), {
+  const keep = {
     ...(code === undefined ? {} : { code }),
     ...(status === undefined ? {} : { status }),
-  });
+  };
+  if (code?.startsWith('ERR_')) {
+    return Object.assign(
+      new Error(
+        `Could not start docker (${code}) with the environment variable(s) ${names}; the message is withheld because it may contain their values.`,
+      ),
+      keep,
+    );
+  }
+  const original =
+    isRecord(error) && error.message === '' ? '' : messageOf(error);
+  const scrubbed = scrubValues(original, env);
+  if (scrubbed.trim().length === 0) {
+    return Object.assign(
+      new Error(
+        `docker failed without a message; environment variable(s) ${names} were passed.`,
+      ),
+      keep,
+    );
+  }
+  return Object.assign(new Error(scrubbed), keep);
 }
 
 /**
@@ -225,12 +254,20 @@ export class DockerImage {
     options: DockerRunOptions = {},
   ): Promise<string> {
     const env = options.env ?? {};
-    const sanitize =
-      Object.keys(env).length > 0
-        ? (error: unknown) => withheld(error, env)
-        : redactError;
+    const base = this.options.run ?? execRun;
+    const hasEnv = Object.keys(env).length > 0;
+    const runner: Runner = async (file, runArgs, runOptions) => {
+      const output = await base(file, runArgs, runOptions);
+      return hasEnv ? scrubValues(output, env) : output;
+    };
+    const sanitize = (error: unknown): Error => {
+      if (hasEnv) {
+        return withheld(error, env);
+      }
+      return redactError(error);
+    };
     return runLogged(
-      this.options.run ?? execRun,
+      runner,
       'docker',
       dockerRunArgs(this.options.image, args, {
         workdir: this.options.workdir ?? '/apps',

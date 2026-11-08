@@ -1,4 +1,6 @@
-import { redactCredentials, redactError } from './utils/redact.js';
+import SemanticReleaseError from '@semantic-release/error';
+import { codeOf, messageOf } from './utils/error.js';
+import { redactCredentials } from './utils/redact.js';
 import { isRecord, stringAt } from './utils/object.js';
 import type { ExecOptions, Runner } from './utils/exec.js';
 import { quoteWord } from './utils/shell.js';
@@ -21,6 +23,33 @@ export interface CommandContext {
   readonly logger: Logger;
   readonly cwd: string;
   readonly run?: Runner;
+}
+
+/**
+ * A copy of a thrown value that is safe to log and rethrow: its message,
+ * `stdout` and `stderr` are redacted, and its `code` and `status` are kept.
+ * A `SemanticReleaseError` is returned as is, because its text is written
+ * by this plugin.
+ *
+ * @param error Whatever was thrown.
+ * @returns An error whose text holds no credentials.
+ */
+export function redactError(error: unknown): Error {
+  if (error instanceof SemanticReleaseError) {
+    return error;
+  }
+  const text = (key: string): Record<string, string> => {
+    const value = isRecord(error) ? error[key] : undefined;
+    return typeof value === 'string' ? { [key]: redactCredentials(value) } : {};
+  };
+  const code = codeOf(error);
+  const status = isRecord(error) ? error.status : undefined;
+  return Object.assign(new Error(redactCredentials(messageOf(error))), {
+    ...(code === undefined ? {} : { code }),
+    ...(typeof status === 'number' ? { status } : {}),
+    ...text('stdout'),
+    ...text('stderr'),
+  });
 }
 
 /**

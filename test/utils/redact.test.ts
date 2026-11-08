@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
-import { redactCredentials, redactError } from '../../src/utils/redact.js';
+import { redactCredentials } from '../../src/utils/redact.js';
 
 describe('redactCredentials', () => {
   it.each([
@@ -38,28 +38,5 @@ describe('redactCredentials', () => {
     'ssh://git@github.com/o/r.git'.replace('git@', ''),
   ])('leaves %s unchanged', (input) => {
     expect(redactCredentials(input)).toBe(input);
-  });
-});
-
-describe('redactError', () => {
-  it('redacts message, stdout and stderr and keeps code and status', () => {
-    const original = Object.assign(new Error('failed https://u:pw0rd@h/x'), {
-      code: 'E1',
-      status: 3,
-      stdout: 'out https://u:pw0rd@h/x',
-      stderr: 'err ghp_abcdefghijklmnopqrstuvwxyz0123456789',
-    });
-    const copy = redactError(original);
-    expect(copy.message).toBe('failed https://***@h/x');
-    expect(copy).toMatchObject({
-      code: 'E1',
-      status: 3,
-      stdout: 'out https://***@h/x',
-      stderr: 'err ***',
-    });
-  });
-
-  it('wraps a thrown string', () => {
-    expect(redactError('https://u:pw0rd@h/x').message).toBe('https://***@h/x');
   });
 });

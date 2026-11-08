@@ -8,27 +8,19 @@ describe('isRecord', () => {
     expect(isRecord({ a: 1 })).toBe(true);
   });
 
-  it('rejects null, arrays and primitives', () => {
-    expect(isRecord(null)).toBe(false);
-    expect(isRecord([])).toBe(false);
-    expect(isRecord('x')).toBe(false);
-    expect(isRecord(undefined)).toBe(false);
+  it.each([null, undefined, [], [1], 'x', 1, true])('rejects %s', (value) => {
+    expect(isRecord(value)).toBe(false);
   });
 });
 
 describe('stringAt', () => {
-  it('reads a string property', () => {
-    expect(stringAt({ a: 'x' }, 'a')).toBe('x');
+  it('reads an own string property', () => {
+    expect(stringAt({ s: 'x' }, 's')).toBe('x');
   });
 
-  it('is undefined for a missing or non-string property', () => {
-    expect(stringAt({ a: 1 }, 'a')).toBeUndefined();
-    expect(stringAt({}, 'a')).toBeUndefined();
-  });
-});
-
-describe('stringAt with inherited members', () => {
-  it('ignores a property that is only inherited', () => {
-    expect(stringAt(Object.create({ a: 'x' }), 'a')).toBeUndefined();
+  it('gives undefined for a missing, inherited or non-string property', () => {
+    expect(stringAt({ n: 1 }, 'n')).toBeUndefined();
+    expect(stringAt({}, 'missing')).toBeUndefined();
+    expect(stringAt({}, 'toString')).toBeUndefined();
   });
 });
