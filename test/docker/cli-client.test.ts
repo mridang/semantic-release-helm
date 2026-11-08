@@ -3,8 +3,9 @@ import {
   buildDockerPull,
   buildDockerRun,
   DockerCliClient,
-  shQuote,
 } from '../../src/docker/cli-client.js';
+// noinspection ES6PreferShortImport
+import { shQuote } from '../../src/utils/shell.js';
 
 function makeLogger() {
   return { log: () => {}, error: () => {} };

@@ -1,4 +1,4 @@
-import { quoteWord, shQuote } from './docker/cli-client.js';
+import { quoteWord, shQuote } from './utils/shell.js';
 
 /**
  * Inputs for the shell script that logs in to an OCI registry and pushes

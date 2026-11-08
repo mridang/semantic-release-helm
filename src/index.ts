@@ -9,7 +9,8 @@ import type {
 } from 'semantic-release';
 import { HelmIndex } from './helm-index.js';
 import { HelmChart, setChartVersion } from './helm-chart.js';
-import { DockerCliClient, quoteWord } from './docker/cli-client.js';
+import { DockerCliClient } from './docker/cli-client.js';
+import { quoteWord } from './utils/shell.js';
 import type { Logger } from './docker/client.js';
 import { DockerImage } from './docker/image.js';
 import { runHostCmd } from './command-runner.js';

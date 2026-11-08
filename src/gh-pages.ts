@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { runHostCmd } from './command-runner.js';
-import { quoteWord } from './docker/cli-client.js';
+import { quoteWord } from './utils/shell.js';
 import type { Logger } from './docker/client.js';
 
 /**
