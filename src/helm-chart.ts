@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
 import * as yaml from 'yaml';
+import { messageOf } from './utils/error.js';
 import { isRecord } from './utils/object.js';
 
 /**
@@ -14,6 +15,27 @@ export interface ChartYaml {
   name: string;
   version?: string;
   [key: string]: unknown;
+}
+
+/**
+ * Parse Chart.yaml text, turning a YAML syntax problem into a coded error that
+ * names the file.
+ *
+ * @param text Chart.yaml content.
+ * @param file Path of the file, for the message.
+ * @returns The parsed value, whatever its shape.
+ * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) when it does not parse.
+ */
+function parseChartYaml(text: string, file: string): unknown {
+  try {
+    return yaml.parse(text);
+  } catch (error) {
+    throw new SemanticReleaseError(
+      `${file} is not valid YAML.`,
+      'EINVALIDCHARTYAML',
+      `${file}: ${messageOf(error)}`,
+    );
+  }
 }
 
 /**
@@ -33,7 +55,7 @@ export class HelmChart {
   static from(chartDir: string): HelmChart {
     const chartYamlPath = path.join(chartDir, 'Chart.yaml');
     const rawText = fs.readFileSync(chartYamlPath, 'utf8');
-    const parsed: unknown = yaml.parse(rawText);
+    const parsed = parseChartYaml(rawText, chartYamlPath);
     const record = isRecord(parsed) ? parsed : {};
 
     const normalized: ChartYaml = {
@@ -131,39 +153,101 @@ export class HelmChart {
 }
 
 /**
- * Return a new Chart.yaml string with only the `version` field updated. The
- * document is edited in place, so comments, quoting, anchors and key order
- * survive, and long scalars are not refolded. A file that is not a YAML
- * mapping, or whose version is shared through an anchor, is refused rather
- * than rewritten.
+ * Escape a string for use in a regular expression.
+ *
+ * @param text Literal text.
+ * @returns A pattern matching the text exactly.
+ */
+function escapeForRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Render a version as a YAML scalar in the style of the one it replaces.
+ *
+ * @param version The new version.
+ * @param style The style of the existing node.
+ * @returns Source text for the scalar.
+ */
+function versionScalar(version: string, style: string | undefined): string {
+  if (style === 'QUOTE_DOUBLE') {
+    return JSON.stringify(version);
+  }
+  if (style === 'QUOTE_SINGLE') {
+    return `'${version.replace(/'/g, "''")}'`;
+  }
+  return yaml.stringify(version, { lineWidth: 0 }).trimEnd();
+}
+
+/**
+ * Return a new Chart.yaml string with only the `version` value changed. The
+ * text of the version node is replaced in place, so every other byte
+ * (indentation, comments, quoting, line endings, number formats, blank lines)
+ * stays as it was; a missing version is appended at the end. The file is
+ * refused rather than rewritten when it is empty or not a mapping, when its
+ * version is not a plain or quoted scalar, or when the version is shared
+ * through a YAML anchor that something aliases (rewriting it would also change
+ * the alias, for example appVersion).
  *
  * @param rawYaml Raw Chart.yaml content.
  * @param version Version string to set.
+ * @param file Name of the file, used in error messages.
  * @returns Updated YAML string.
- * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) when the file is empty or
- *   not a mapping; the YAML parse error when it is malformed.
+ * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) for any of the cases
+ *   above and for YAML that does not parse; the message names the file.
  */
-export function setChartVersion(rawYaml: string, version: string): string {
+export function setChartVersion(
+  rawYaml: string,
+  version: string,
+  file = 'Chart.yaml',
+): string {
+  const refuse = (message: string, details: string): SemanticReleaseError =>
+    new SemanticReleaseError(message, 'EINVALIDCHARTYAML', details);
   const doc = yaml.parseDocument(rawYaml);
   const [parseError] = doc.errors;
   if (parseError) {
-    throw parseError;
+    throw refuse(
+      `${file} is not valid YAML.`,
+      `${file}: ${parseError.message}`,
+    );
   }
   if (!yaml.isMap(doc.contents)) {
-    throw new SemanticReleaseError(
-      'Chart.yaml is not a YAML mapping.',
-      'EINVALIDCHARTYAML',
-      'Chart.yaml must be a mapping with at least a name and a version.',
+    throw refuse(
+      `${file} is not a YAML mapping.`,
+      `${file} must be a mapping with at least a name and a version.`,
     );
   }
   const existing = doc.get('version', true);
-  if (yaml.isNode(existing) && existing.anchor) {
-    throw new SemanticReleaseError(
-      'The version in Chart.yaml is shared through a YAML anchor.',
-      'EINVALIDCHARTYAML',
+  if (existing === undefined) {
+    const eol = rawYaml.includes('\r\n') ? '\r\n' : '\n';
+    if (doc.contents.flow) {
+      doc.set('version', version);
+      return doc.toString({ lineWidth: 0 });
+    }
+    const body = /\r?\n$/.test(rawYaml) ? rawYaml : `${rawYaml}${eol}`;
+    return `${body}version: ${versionScalar(version, undefined)}${eol}`;
+  }
+  if (!yaml.isScalar(existing) || !existing.range) {
+    throw refuse(
+      `The version in ${file} is not a scalar.`,
+      `${file}: version must be a plain or quoted string.`,
+    );
+  }
+  if (existing.type === 'BLOCK_LITERAL' || existing.type === 'BLOCK_FOLDED') {
+    throw refuse(
+      `The version in ${file} is a block scalar.`,
+      `${file}: version must be a plain or quoted string.`,
+    );
+  }
+  if (
+    existing.anchor &&
+    new RegExp(`\\*${escapeForRegExp(existing.anchor)}(?![\\w-])`).test(rawYaml)
+  ) {
+    throw refuse(
+      `The version in ${file} is shared through a YAML anchor.`,
       'Rewriting it would also change every alias of it (for example appVersion); give version its own value.',
     );
   }
-  doc.set('version', version);
-  return doc.toString({ lineWidth: 0 });
+  const [start, end] = existing.range;
+  return `${rawYaml.slice(0, start)}${versionScalar(version, existing.type)}${rawYaml.slice(end)}`;
 }

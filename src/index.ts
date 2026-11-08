@@ -273,7 +273,7 @@ export async function prepare(
   }
 
   const raw = fs.readFileSync(chartYamlPath, 'utf8');
-  const updatedYaml = setChartVersion(raw, version);
+  const updatedYaml = setChartVersion(raw, version, chartYamlPath);
   fs.writeFileSync(chartYamlPath, updatedYaml, 'utf8');
   logger.log(`prepare: updated Chart.yaml to version ${version}`);
 
