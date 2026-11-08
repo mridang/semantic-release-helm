@@ -6,6 +6,7 @@ import {
   buildWorktreeAddCommand,
   commitIfStaged,
   hasStagedChanges,
+  isRemoteReachable,
   releaseBase,
   repositoryWebBase,
 } from '../src/gh-pages.js';
@@ -206,6 +207,19 @@ describe('buildWorktreeAddCommand', () => {
         },
       );
       expect(git(wt, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('pages');
+    }),
+  );
+});
+
+describe('isRemoteReachable', () => {
+  it(
+    'is true for a reachable remote and false for a missing one',
+    withTempDir((dir) => {
+      initRepo(dir);
+      const bare = path.join(dir, 'bare.git');
+      git(dir, 'init', '--quiet', '--bare', bare);
+      expect(isRemoteReachable(bare, dir)).toBe(true);
+      expect(isRemoteReachable(path.join(dir, 'missing.git'), dir)).toBe(false);
     }),
   );
 });

@@ -203,3 +203,21 @@ export function buildWorktreeAddCommand(
     `(${refCheck} && (${addExisting}) || (${addOrphan}))`
   );
 }
+
+/**
+ * Whether a git remote can be reached with the current credentials. Only the
+ * exit status of `git ls-remote --heads` is used and its output is discarded,
+ * so a remote with a very large number of branches cannot overflow a buffer.
+ *
+ * @param remote Remote name or URL.
+ * @param cwd Directory to run git in.
+ * @returns True when git exits successfully.
+ */
+export function isRemoteReachable(remote: string, cwd: string): boolean {
+  return (
+    spawnSync('git', ['ls-remote', '--heads', remote], {
+      cwd,
+      stdio: 'ignore',
+    }).status === 0
+  );
+}

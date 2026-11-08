@@ -24,6 +24,7 @@ import { DockerHelmDocs } from './helm-docs.js';
 import {
   buildWorktreeAddCommand,
   commitIfStaged,
+  isRemoteReachable,
   releaseBase,
 } from './gh-pages.js';
 import { buildOciPublish } from './oci-publish.js';
@@ -154,6 +155,11 @@ export async function verifyConditions(
       `No Chart.yaml found in ${cfg.getChartPath()}.`,
     );
   }
+  setChartVersion(
+    fs.readFileSync(chartYamlPath, 'utf8'),
+    '0.0.0',
+    chartYamlPath,
+  );
   logger.log(`verifyConditions: found chart at ${chartYamlPath}`);
 
   if (cfg.isGhEnabled()) {
@@ -194,12 +200,11 @@ export async function verifyConditions(
       );
     }
 
-    try {
-      runHostCmd(`git ls-remote --heads ${quoteWord(ghRepo)}`, cwd, logger);
+    if (isRemoteReachable(ghRepo, cwd)) {
       logger.log(
         `verifyConditions: remote "${redactCredentials(ghRepo)}" is accessible`,
       );
-    } catch {
+    } else {
       throw new SemanticReleaseError(
         `Cannot access remote repository "${redactCredentials(ghRepo)}".`,
         'EREMOTEACCESS',
@@ -317,6 +322,94 @@ export async function prepare(
 }
 
 /**
+ * Everything the gh-pages publish needs that can be checked before anything
+ * irreversible happens: a clean temporary working tree on the gh-pages branch,
+ * the existing index (loaded and validated), the chart (parsed) and the base
+ * of the release links.
+ */
+interface GhPagesPlan {
+  readonly ghBranch: string;
+  readonly ghRepo: string;
+  readonly tmpWorktree: string;
+  readonly indexPath: string;
+  readonly chart: HelmChart;
+  readonly repoBase: string | undefined;
+  readonly index: HelmIndex;
+}
+
+/**
+ * Prepare the gh-pages publish: create the working tree, then load and
+ * validate the existing index and the chart. It runs before the OCI push so
+ * that a refusal (a malformed index or Chart.yaml) cannot leave a release
+ * half published.
+ *
+ * @param cfg Plugin configuration.
+ * @param context semantic-release context.
+ * @param cwd Repository root.
+ * @returns The plan used by the rest of the publish.
+ * @throws SemanticReleaseError when the index or Chart.yaml is refused.
+ */
+function planGhPages(
+  cfg: HelmConfig,
+  context: PublishContext,
+  cwd: string,
+): GhPagesPlan {
+  const { logger } = context;
+  const ghBranch = cfg.getGhBranch();
+  const ghRepo = cfg.getGhRepo();
+
+  const tmpWorktree = path.join(cwd, '.gh-pages-tmp');
+
+  try {
+    runHostCmd(
+      `git worktree remove ${quoteWord(tmpWorktree)} --force`,
+      cwd,
+      logger,
+    );
+  } catch {
+    logger.log('gh-pages cleanup: worktree not found (expected)');
+  }
+  fs.rmSync(tmpWorktree, { recursive: true, force: true });
+
+  try {
+    runHostCmd(
+      `git fetch ${quoteWord(ghRepo)} ${quoteWord(ghBranch)}`,
+      cwd,
+      logger,
+    );
+  } catch {
+    logger.log('gh-pages: branch does not exist remotely (will create)');
+  }
+
+  runHostCmd(
+    buildWorktreeAddCommand(tmpWorktree, ghRepo, ghBranch),
+    cwd,
+    logger,
+  );
+
+  fs.mkdirSync(tmpWorktree, { recursive: true });
+
+  const indexPath = path.join(tmpWorktree, 'index.yaml');
+  const chart = HelmChart.from(path.join(cwd, cfg.getChartPath()));
+
+  const remoteUrl = execSync(`git remote get-url ${quoteWord(ghRepo)}`, {
+    cwd,
+    encoding: 'utf8',
+  }).trim();
+  const repoBase = releaseBase(remoteUrl, context.options?.repositoryUrl);
+
+  return {
+    ghBranch,
+    ghRepo,
+    tmpWorktree,
+    indexPath,
+    chart,
+    repoBase,
+    index: HelmIndex.fromFile(indexPath),
+  };
+}
+
+/**
  * semantic-release `publish` step. Publishes the packaged chart(s) to:
  * - an OCI registry (optional), and/or
  * - a GitHub Pages branch (default).
@@ -371,6 +464,8 @@ export async function publish(
   }
   logger.log(`publish: found ${files.length} packaged chart(s)`);
 
+  const ghPlan = cfg.isGhEnabled() ? planGhPages(cfg, context, cwd) : undefined;
+
   if (cfg.isOciEnabled()) {
     const helmImage = cfg.getHelmImage();
     const haveUser = cfg.hasOciUser();
@@ -397,49 +492,9 @@ export async function publish(
     );
   }
 
-  if (cfg.isGhEnabled()) {
-    const ghBranch = cfg.getGhBranch();
-    const ghRepo = cfg.getGhRepo();
-
-    const tmpWorktree = path.join(cwd, '.gh-pages-tmp');
-
-    try {
-      runHostCmd(
-        `git worktree remove ${quoteWord(tmpWorktree)} --force`,
-        cwd,
-        logger,
-      );
-    } catch {
-      logger.log('gh-pages cleanup: worktree not found (expected)');
-    }
-    fs.rmSync(tmpWorktree, { recursive: true, force: true });
-
-    try {
-      runHostCmd(
-        `git fetch ${quoteWord(ghRepo)} ${quoteWord(ghBranch)}`,
-        cwd,
-        logger,
-      );
-    } catch {
-      logger.log('gh-pages: branch does not exist remotely (will create)');
-    }
-
-    runHostCmd(
-      buildWorktreeAddCommand(tmpWorktree, ghRepo, ghBranch),
-      cwd,
-      logger,
-    );
-
-    fs.mkdirSync(tmpWorktree, { recursive: true });
-
-    const indexPath = path.join(tmpWorktree, 'index.yaml');
-    const chart = HelmChart.from(path.join(cwd, cfg.getChartPath()));
-
-    const remoteUrl = execSync(`git remote get-url ${quoteWord(ghRepo)}`, {
-      cwd,
-      encoding: 'utf8',
-    }).trim();
-    const repoBase = releaseBase(remoteUrl, context.options?.repositoryUrl);
+  if (ghPlan) {
+    const { ghBranch, ghRepo, tmpWorktree, indexPath, chart, repoBase } =
+      ghPlan;
 
     const indexDoc = files.reduce((doc, tgz) => {
       const abs = path.isAbsolute(tgz) ? tgz : path.join(cwd, tgz);
@@ -450,7 +505,7 @@ export async function publish(
         : filename;
 
       return doc.append(chart, abs, '', { urls: [releaseUrl] });
-    }, HelmIndex.fromFile(indexPath));
+    }, ghPlan.index);
 
     indexDoc.writeTo(indexPath);
 
