@@ -24,7 +24,7 @@ import {
   commitIfStaged,
   repositoryWebBase,
 } from './gh-pages.js';
-import { buildOciScript, OCI_PASSWORD_ENV } from './oci-publish.js';
+import { buildOciPublish } from './oci-publish.js';
 
 /**
  * Minimal shape of a Chart.yaml document.
@@ -371,7 +371,6 @@ export async function publish(
     const helmImage = cfg.getHelmImage();
     const haveUser = cfg.hasOciUser();
     const havePass = cfg.hasOciPass();
-    const password = cfg.getOciPassword();
 
     logger.log(
       `publish: OCI mode -> repo="${cfg.getOciRepo()}", ` +
@@ -379,21 +378,15 @@ export async function publish(
         `usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
 
-    const script = buildOciScript({
+    const { script, env } = buildOciPublish({
       hostPort: cfg.getOciHostPort(),
       repo: cfg.getOciRepo(),
       insecure: cfg.getOciInsecure(),
       username: cfg.getOciUsername(),
-      hasPassword: havePass,
+      password: cfg.getOciPassword(),
       files,
     });
-    await runDockerShell(
-      helmImage,
-      script,
-      cwd,
-      logger,
-      password ? { [OCI_PASSWORD_ENV]: password } : undefined,
-    );
+    await runDockerShell(helmImage, script, cwd, logger, env);
 
     logger.log(
       `{ "helm": { "pushed": ${files.length}, "repo": "${cfg.getOciRepo()}" } }`,

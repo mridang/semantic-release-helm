@@ -9,15 +9,23 @@ export interface OciScriptInput {
   readonly repo: string | undefined;
   readonly insecure: boolean;
   readonly username: string | undefined;
-  readonly hasPassword: boolean;
+  readonly password: string | undefined;
   readonly files: readonly string[];
+}
+
+/**
+ * What to run in the Helm container, and with which environment variables.
+ */
+export interface OciPublish {
+  readonly script: string;
+  readonly env: Readonly<Record<string, string>>;
 }
 
 /**
  * Name of the container environment variable that carries the registry
  * password into the script, so it is never part of the script text.
  */
-export const OCI_PASSWORD_ENV = 'OCI_PASSWORD';
+const OCI_PASSWORD_ENV = 'OCI_PASSWORD';
 
 /**
  * Build the `/bin/sh` script run inside the Helm container to publish
@@ -26,21 +34,22 @@ export const OCI_PASSWORD_ENV = 'OCI_PASSWORD';
  * instead of being written into the script, so neither the logged command
  * nor an error message can contain it.
  *
- * @param input Registry, credentials presence and packaged chart files.
- * @returns Commands joined with `&&`.
+ * @param input Registry, credentials and packaged chart files.
+ * @returns The script (commands joined with `&&`) and the environment to run
+ *   it with, which holds the password when there is one.
  */
-export function buildOciScript(input: OciScriptInput): string {
-  const { hostPort, repo, insecure, username, hasPassword, files } = input;
+export function buildOciPublish(input: OciScriptInput): OciPublish {
+  const { hostPort, repo, insecure, username, password, files } = input;
   const plainHttpFlag = insecure ? ' --plain-http' : '';
   const insecureLoginFlag = insecure ? ' --insecure' : '';
-  return [
+  const script = [
     ...(insecure && hostPort
       ? [
           'mkdir --parents /root/.config/helm/registry',
           `printf %s ${shQuote(`{"auths":{"${hostPort}":{"insecure":true}}}`)} > /root/.config/helm/registry/config.json`,
         ]
       : []),
-    ...(username && hasPassword && hostPort
+    ...(username && password && hostPort
       ? [
           `helm registry login${insecureLoginFlag} --username=${quoteWord(username)} --password="$${OCI_PASSWORD_ENV}" ${quoteWord(hostPort)}`,
         ]
@@ -50,4 +59,5 @@ export function buildOciScript(input: OciScriptInput): string {
         `helm push ${quoteWord(tgz)} ${quoteWord(repo ?? '')}${plainHttpFlag}`,
     ),
   ].join(' && ');
+  return { script, env: password ? { [OCI_PASSWORD_ENV]: password } : {} };
 }
