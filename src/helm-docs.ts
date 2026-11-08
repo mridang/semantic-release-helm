@@ -1,13 +1,8 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { DockerCliClient } from './docker/cli-client.js';
 import { DockerImage } from './docker/image.js';
-import type { DockerClient } from './docker/client.js';
-
-interface Logger {
-  log: (m: string) => void;
-  error: (m: string) => void;
-}
+import type { DockerClient, Logger } from './docker/client.js';
 
 /**
  * Public interface for README docs generation for a Helm chart.
@@ -25,7 +20,7 @@ interface HelmDocs {
   generate(
     cwd: string,
     chartPath: string,
-    args: string[],
+    args: readonly string[],
     logger: Logger,
   ): Promise<void>;
 }
@@ -38,9 +33,7 @@ export const VALUES_TABLE_TEMPLATE = '{{ template "chart.valuesTable" . }}';
 const VALUES_TABLE_START_RE = /<!--\s*render\.chart\.valuesTable\s*-->/i;
 const VALUES_TABLE_END_RE = /<!--\s*end\.chart\.valuesTable\s*-->/i;
 const VALUES_TABLE_BLOCK_RE = new RegExp(
-  String(VALUES_TABLE_START_RE).slice(1, -2) +
-    '[\\s\\S]*?' +
-    String(VALUES_TABLE_END_RE).slice(1, -2),
+  VALUES_TABLE_START_RE.source + '[\\s\\S]*?' + VALUES_TABLE_END_RE.source,
   'gi',
 );
 
@@ -54,17 +47,15 @@ export function normalizeReadmeValuesTableContent(content: string): {
   updated: string;
   changed: boolean;
 } {
-  let changed = false;
   const updated = content.replace(VALUES_TABLE_BLOCK_RE, (block) => {
     const start =
       block.match(VALUES_TABLE_START_RE)?.[0] ??
       '<!-- render.chart.valuesTable -->';
     const end =
       block.match(VALUES_TABLE_END_RE)?.[0] ?? '<!-- end.chart.valuesTable -->';
-    changed = true;
     return `${start}\n${VALUES_TABLE_TEMPLATE}\n${end}`;
   });
-  return { updated, changed };
+  return { updated, changed: content.search(VALUES_TABLE_BLOCK_RE) !== -1 };
 }
 
 /**
@@ -100,7 +91,7 @@ export class DockerHelmDocs implements HelmDocs {
   async generate(
     cwd: string,
     chartPath: string,
-    args: string[],
+    args: readonly string[],
     logger: Logger,
   ): Promise<void> {
     const readmePath = path.join(cwd, chartPath, 'README.md');

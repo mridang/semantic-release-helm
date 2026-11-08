@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'yaml';
-import { HelmChart, ChartYaml } from '../src/helm-chart.js';
+import { HelmChart, ChartYaml, setChartVersion } from '../src/helm-chart.js';
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { withTempDir } from './utils/tmpdir.js';
 
@@ -131,4 +131,64 @@ describe('HelmChart', () => {
       });
     }),
   );
+});
+
+describe('HelmChart.from with unusual Chart.yaml content', () => {
+  it(
+    'stringifies a numeric name, version and apiVersion',
+    withTempDir((base: string) => {
+      const dir = path.join(base, 'odd');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'Chart.yaml'),
+        'name: 7\nversion: 1.5\napiVersion: 2\n',
+        'utf8',
+      );
+      const chart = HelmChart.from(dir);
+      expect({
+        name: chart.name(),
+        version: chart.version(),
+        apiVersion: chart.apiVersion(),
+      }).toEqual({ name: '7', version: '1.5', apiVersion: '2' });
+    }),
+  );
+
+  it(
+    'treats an empty or non-mapping file as an empty chart',
+    withTempDir((base: string) => {
+      const dir = path.join(base, 'empty');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'Chart.yaml'), '- a\n- b\n', 'utf8');
+      const chart = HelmChart.from(dir);
+      expect({
+        name: chart.name(),
+        version: chart.version(),
+        apiVersion: chart.apiVersion(),
+      }).toEqual({ name: '', version: undefined, apiVersion: undefined });
+    }),
+  );
+});
+
+describe('setChartVersion', () => {
+  it('replaces the version and keeps every other field', () => {
+    const out = setChartVersion(
+      'apiVersion: v2\nname: demo\nversion: 0.1.0\nkeywords:\n  - a\n',
+      '2.0.0',
+    );
+    expect(yaml.parse(out)).toEqual({
+      apiVersion: 'v2',
+      name: 'demo',
+      version: '2.0.0',
+      keywords: ['a'],
+    });
+  });
+
+  it('adds a version when the file is empty or not a mapping', () => {
+    expect(yaml.parse(setChartVersion('', '1.0.0'))).toEqual({
+      version: '1.0.0',
+    });
+    expect(yaml.parse(setChartVersion('- a\n', '1.0.0'))).toEqual({
+      version: '1.0.0',
+    });
+  });
 });

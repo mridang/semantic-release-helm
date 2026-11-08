@@ -1,6 +1,7 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as yaml from 'yaml';
+import { isRecord } from './utils/object.js';
 
 /**
  * Schema for Chart.yaml used by tests and serialization. Additional
@@ -31,18 +32,20 @@ export class HelmChart {
   static from(chartDir: string): HelmChart {
     const chartYamlPath = path.join(chartDir, 'Chart.yaml');
     const rawText = fs.readFileSync(chartYamlPath, 'utf8');
-    const parsed = (yaml.parse(rawText) ?? {}) as ChartYaml;
+    const parsed: unknown = yaml.parse(rawText);
+    const record = isRecord(parsed) ? parsed : {};
 
-    const normalized: ChartYaml = { ...parsed };
-    if (typeof normalized.name !== 'string') {
-      normalized.name = String(normalized.name ?? '');
-    }
-    if (normalized.version !== undefined) {
-      normalized.version = String(normalized.version);
-    }
-    if (normalized.apiVersion !== undefined) {
-      normalized.apiVersion = String(normalized.apiVersion);
-    }
+    const normalized: ChartYaml = {
+      ...record,
+      name:
+        typeof record.name === 'string'
+          ? record.name
+          : String(record.name ?? ''),
+      ...(record.version !== undefined && { version: String(record.version) }),
+      ...(record.apiVersion !== undefined && {
+        apiVersion: String(record.apiVersion),
+      }),
+    };
 
     return new HelmChart(normalized);
   }
@@ -124,4 +127,18 @@ export class HelmChart {
   toYAML(): string {
     return yaml.stringify(this.data);
   }
+}
+
+/**
+ * Return a new Chart.yaml string with only the `version` field updated. The
+ * function parses the input YAML, shallow-copies the object to avoid losing
+ * unknown fields, overrides `version`, and stringifies the result.
+ *
+ * @param rawYaml Raw Chart.yaml content.
+ * @param version Version string to set.
+ * @returns Updated YAML string.
+ */
+export function setChartVersion(rawYaml: string, version: string): string {
+  const parsed: unknown = yaml.parse(rawYaml);
+  return yaml.stringify({ ...(isRecord(parsed) ? parsed : {}), version });
 }

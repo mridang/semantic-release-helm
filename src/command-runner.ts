@@ -1,7 +1,37 @@
 // src/command-runner.ts
 import { execSync } from 'node:child_process';
-// @ts-expect-error semantic-release types are not bundled
-import { Context } from 'semantic-release';
+import type { Logger } from './docker/client.js';
+import { isRecord, stringAt } from './utils/object.js';
+
+/**
+ * Decode captured process output, which `execSync` attaches to its error as
+ * a string or a Buffer.
+ *
+ * @param value The `stdout` or `stderr` property of the error.
+ * @returns The text, or an empty string when there is none.
+ */
+function textOf(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return Buffer.isBuffer(value) ? value.toString('utf8') : '';
+}
+
+/**
+ * Log captured output when it has content: trimmed if that leaves text,
+ * otherwise as captured.
+ *
+ * @param text The captured output.
+ * @param logger Logger receiving the output.
+ */
+function logCaptured(text: string, logger: Logger): void {
+  const trimmed = text.trim();
+  if (trimmed.length > 0) {
+    logger.error(trimmed);
+  } else if (text.length > 0) {
+    logger.error(text);
+  }
+}
 
 /**
  * Execute a host command and return its trimmed stdout. All interactions are
@@ -20,69 +50,26 @@ import { Context } from 'semantic-release';
  * @returns Trimmed stdout of the command.
  * @throws Any error thrown by execSync is rethrown after being logged.
  */
-export function runHostCmd(
-  cmd: string,
-  cwd: string,
-  logger: Context['logger'],
-): string {
-  const stringify = (v: unknown): string => {
-    if (typeof v === 'string') {
-      return v;
-    } else {
-      if (Buffer.isBuffer(v)) {
-        return v.toString('utf8');
-      } else {
-        return '';
-      }
-    }
-  };
-
+export function runHostCmd(cmd: string, cwd: string, logger: Logger): string {
   logger.log(`$ ${cmd}`);
 
   try {
     const out = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf8' });
     const trimmed = out.trim();
 
-    if (trimmed.length > 0) {
-      logger.log(trimmed);
-    } else {
-      logger.log('(no output)');
-    }
+    logger.log(trimmed.length > 0 ? trimmed : '(no output)');
 
     return trimmed;
   } catch (err: unknown) {
     logger.error(`Command failed: ${cmd}`);
 
-    if (typeof err === 'object' && err !== null) {
-      const e = err as {
-        stdout?: string | Buffer;
-        stderr?: string | Buffer;
-        message?: string;
-      };
+    if (isRecord(err)) {
+      logCaptured(textOf(err.stdout), logger);
+      logCaptured(textOf(err.stderr), logger);
 
-      const out = stringify(e.stdout);
-      const errOut = stringify(e.stderr);
-      const outTrimmed = out.trim();
-      const errTrimmed = errOut.trim();
-
-      if (outTrimmed.length > 0) {
-        logger.error(outTrimmed);
-      } else {
-        if (out.length > 0) {
-          logger.error(out);
-        }
-      }
-
-      if (errTrimmed.length > 0) {
-        logger.error(errTrimmed);
-      } else {
-        if (errOut.length > 0) {
-          logger.error(errOut);
-        }
-      }
-
-      if (typeof e.message === 'string' && e.message.length > 0) {
-        logger.error(e.message);
+      const message = stringAt(err, 'message');
+      if (message !== undefined && message.length > 0) {
+        logger.error(message);
       }
     }
 

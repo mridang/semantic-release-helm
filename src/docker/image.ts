@@ -1,4 +1,4 @@
-import type { DockerClient } from './client.js';
+import type { DockerClient, Logger, Mount, RunOptions } from './client.js';
 import { DockerCliClient } from './cli-client.js';
 
 /**
@@ -6,13 +6,9 @@ import { DockerCliClient } from './cli-client.js';
  * Values apply to all runs through the wrapper for that instance only.
  */
 interface DockerImageOptions {
-  workdir?: string;
-  mounts?: Array<{
-    host: string;
-    container: string;
-    readonly?: boolean;
-  }>;
-  addHosts?: string[];
+  readonly workdir?: string;
+  readonly mounts?: readonly Mount[];
+  readonly addHosts?: readonly string[];
 }
 
 /**
@@ -23,17 +19,14 @@ interface DockerImageOptions {
 export class DockerImage {
   private readonly image: string;
   private readonly cwd: string;
-  private readonly logger: {
-    log: (m: string) => void;
-    error: (m: string) => void;
-  };
+  private readonly logger: Logger;
   private readonly client: DockerClient;
   private readonly opts: DockerImageOptions;
 
   constructor(
     image: string,
     cwd: string,
-    logger: { log: (m: string) => void; error: (m: string) => void },
+    logger: Logger,
     client: DockerClient = new DockerCliClient(),
     opts: DockerImageOptions = {},
   ) {
@@ -58,16 +51,8 @@ export class DockerImage {
    * default host mapping, mount, and working directory policies to
    * match current plugin behavior with a single call.
    */
-  async run(args: string[]): Promise<void> {
-    await this.client.run(this.image, args, {
-      cwd: this.cwd,
-      workdir: this.opts.workdir ?? '/apps',
-      mounts: this.opts.mounts ?? [
-        { host: this.cwd, container: '/apps', readonly: false },
-      ],
-      addHosts: this.opts.addHosts ?? ['host.docker.internal:host-gateway'],
-      logger: this.logger,
-    });
+  async run(args: readonly string[]): Promise<void> {
+    await this.client.run(this.image, args, this.runOptions());
   }
 
   /**
@@ -77,14 +62,26 @@ export class DockerImage {
    */
   async shell(script: string): Promise<void> {
     await this.client.run(this.image, ['-lc', script], {
+      ...this.runOptions(),
+      entrypoint: '/bin/sh',
+    });
+  }
+
+  /**
+   * The run options shared by every run: the plugin's defaults overlaid
+   * with this instance's overrides.
+   *
+   * @returns Options for the client.
+   */
+  private runOptions(): RunOptions {
+    return {
       cwd: this.cwd,
       workdir: this.opts.workdir ?? '/apps',
       mounts: this.opts.mounts ?? [
         { host: this.cwd, container: '/apps', readonly: false },
       ],
       addHosts: this.opts.addHosts ?? ['host.docker.internal:host-gateway'],
-      entrypoint: '/bin/sh',
       logger: this.logger,
-    });
+    };
   }
 }

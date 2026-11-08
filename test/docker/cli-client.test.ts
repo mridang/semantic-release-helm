@@ -61,3 +61,29 @@ test('DockerCliClient.pull maps runner error to SemanticReleaseError', async () 
     code: 'EIMAGEPULLFAILED',
   });
 });
+
+test('DockerCliClient.run logs the runner error message and rethrows', async () => {
+  const errors: string[] = [];
+  const client = new DockerCliClient(() => {
+    throw new Error('exploded');
+  });
+  await expect(
+    client.run('alpine:3', ['echo'], {
+      cwd: '/repo',
+      logger: { log: () => {}, error: (m) => errors.push(m) },
+    }),
+  ).rejects.toThrow('exploded');
+  expect(errors).toEqual(['exploded']);
+});
+
+test('buildDockerRun adds read-only mounts and the entrypoint', () => {
+  const cmd = buildDockerRun('alpine:3', ['-lc', 'echo 1'], {
+    workdir: '/w',
+    mounts: [{ host: '/a', container: '/b', readonly: true }],
+    addHosts: [],
+    entrypoint: '/bin/sh',
+  });
+  expect(cmd).toBe(
+    "docker run --rm --volume=/a:/b:ro --workdir=/w --entrypoint=/bin/sh alpine:3 -lc 'echo 1'",
+  );
+});

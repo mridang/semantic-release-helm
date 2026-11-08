@@ -1,8 +1,5 @@
 // noinspection JSUnusedGlobalSymbols
-// @ts-expect-error semantic-release types are not bundled
-import { PluginConfig } from 'semantic-release';
-
-export interface HelmPluginConfig extends PluginConfig {
+export interface HelmPluginConfig {
   /**
    * Path to the chart directory that contains `Chart.yaml`.
    * Example: `"charts/app"`.

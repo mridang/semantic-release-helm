@@ -394,3 +394,49 @@ describe('HelmIndex', () => {
     }),
   );
 });
+
+describe('HelmIndex.fromFile with unusual index.yaml content', () => {
+  it(
+    'keeps well-formed entries and drops malformed ones',
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(
+        file,
+        yaml.stringify({
+          apiVersion: 'v9',
+          generated: 'then',
+          entries: {
+            good: [{ name: 'good', version: '1.0.0' }, 'junk', { name: 'x' }],
+            numeric: [{ name: 'numeric', version: 2 }],
+            notAList: { version: '1.0.0' },
+          },
+        }),
+        'utf8',
+      );
+      const out = path.join(base, 'out.yaml');
+      HelmIndex.fromFile(file).writeTo(out);
+      expect(readIndex(out)).toEqual({
+        apiVersion: 'v1',
+        generated: 'then',
+        entries: {
+          good: [{ name: 'good', version: '1.0.0' }],
+          numeric: [{ name: 'numeric', version: '2' }],
+        },
+      });
+    }),
+  );
+
+  it(
+    'yields an empty index for an empty or non-mapping file',
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      const out = path.join(base, 'out.yaml');
+      fs.writeFileSync(file, '', 'utf8');
+      HelmIndex.fromFile(file).writeTo(out);
+      expect(readIndex(out)).toEqual({ apiVersion: 'v1', entries: {} });
+      fs.writeFileSync(file, '- a\n', 'utf8');
+      HelmIndex.fromFile(file).writeTo(out);
+      expect(readIndex(out)).toEqual({ apiVersion: 'v1', entries: {} });
+    }),
+  );
+});

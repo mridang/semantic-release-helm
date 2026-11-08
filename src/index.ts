@@ -1,24 +1,22 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { execSync } from 'child_process';
-// @ts-expect-error semantic-release types are not bundled
-import { Context } from 'semantic-release';
-// @ts-expect-error semantic-release types are not bundled
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { execSync } from 'node:child_process';
 import SemanticReleaseError from '@semantic-release/error';
-import * as yaml from 'yaml';
+import type {
+  PrepareContext,
+  PublishContext,
+  VerifyConditionsContext,
+} from 'semantic-release';
 import { HelmIndex } from './helm-index.js';
-import { HelmChart } from './helm-chart.js';
+import { HelmChart, setChartVersion } from './helm-chart.js';
 import { DockerCliClient } from './docker/cli-client.js';
+import type { Logger } from './docker/client.js';
 import { DockerImage } from './docker/image.js';
 import { runHostCmd } from './command-runner.js';
 import { HelmConfig, HelmPluginConfig } from './plugin-config.js';
 import { DockerHelmDocs } from './helm-docs.js';
-
-export interface ChartYaml {
-  name: string;
-  version?: string;
-  [key: string]: string | number | boolean | object | undefined;
-}
+import { messageOf } from './utils/error.js';
+import { flattenRecord } from './utils/object.js';
 
 const COMMIT_NAME = 'semantic-release-bot';
 const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
@@ -39,9 +37,9 @@ const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
  */
 async function runDockerCmd(
   image: string,
-  args: string[],
+  args: readonly string[],
   cwd: string,
-  logger: Context['logger'],
+  logger: Logger,
 ): Promise<void> {
   const img = new DockerImage(image, cwd, logger, new DockerCliClient());
   await img.run(args);
@@ -64,7 +62,7 @@ async function runDockerShell(
   image: string,
   script: string,
   cwd: string,
-  logger: Context['logger'],
+  logger: Logger,
 ): Promise<void> {
   const img = new DockerImage(image, cwd, logger, new DockerCliClient());
   await img.shell(script);
@@ -79,10 +77,7 @@ async function runDockerShell(
  * @param logger semantic-release logger used for structured logs.
  * @throws SemanticReleaseError if the image cannot be pulled.
  */
-async function verifyDockerImage(
-  image: string,
-  logger: Context['logger'],
-): Promise<void> {
+async function verifyDockerImage(image: string, logger: Logger): Promise<void> {
   const client = new DockerCliClient();
   try {
     await client.pull(image, logger);
@@ -93,24 +88,9 @@ async function verifyDockerImage(
     throw new SemanticReleaseError(
       `Failed to pull Docker image: ${image}`,
       'EIMAGEPULLFAILED',
-      err instanceof Error ? err.message : 'Unknown error',
+      messageOf(err),
     );
   }
-}
-
-/**
- * Return a new Chart.yaml string with only the `version` field updated. The
- * function parses the input YAML, shallow-copies the object to avoid losing
- * unknown fields, overrides `version`, and stringifies the result.
- *
- * @param rawYaml Raw Chart.yaml content.
- * @param version Version string to set.
- * @returns Updated YAML string.
- */
-function setChartVersion(rawYaml: string, version: string): string {
-  const parsed: ChartYaml = yaml.parse(rawYaml) as ChartYaml;
-  const updated: ChartYaml = { ...parsed, version };
-  return yaml.stringify(updated);
 }
 
 /**
@@ -131,15 +111,16 @@ function setChartVersion(rawYaml: string, version: string): string {
  */
 export async function verifyConditions(
   pluginConfig: HelmPluginConfig,
-  context: Context,
+  context: VerifyConditionsContext,
 ): Promise<void> {
-  const { logger, cwd } = context;
+  const { logger } = context;
+  const cwd = context.cwd ?? process.cwd();
   const cfg = new HelmConfig(pluginConfig);
 
   logger.log('verifyConditions: starting');
 
   try {
-    void runHostCmd('docker version', cwd, logger);
+    runHostCmd('docker version', cwd, logger);
   } catch {
     throw new SemanticReleaseError(
       'Docker not available.',
@@ -254,9 +235,10 @@ export async function verifyConditions(
  */
 export async function prepare(
   pluginConfig: HelmPluginConfig,
-  context: Context,
+  context: PrepareContext,
 ): Promise<void> {
-  const { cwd, nextRelease, logger } = context;
+  const { nextRelease, logger } = context;
+  const cwd = context.cwd ?? process.cwd();
   const cfg = new HelmConfig(pluginConfig);
 
   logger.log('prepare: starting');
@@ -292,38 +274,9 @@ export async function prepare(
       'template',
       'sr-check',
       cfg.getChartPath(),
-      ...(() => {
-        const templateValues = cfg.getTemplateValues();
-        if (!templateValues) {
-          return [];
-        }
-
-        const flattenObject = (
-          obj: Record<string, unknown>,
-          prefix = '',
-        ): Record<string, string> =>
-          Object.keys(obj).reduce((acc: Record<string, string>, k: string) => {
-            const pre = prefix.length ? `${prefix}.` : '';
-            const value = obj[k];
-            if (
-              typeof value === 'object' &&
-              value !== null &&
-              !Array.isArray(value)
-            ) {
-              Object.assign(
-                acc,
-                flattenObject(value as Record<string, unknown>, pre + k),
-              );
-            } else {
-              acc[pre + k] = String(value);
-            }
-            return acc;
-          }, {});
-
-        return Object.entries(flattenObject(templateValues)).flatMap(
-          ([key, value]) => ['--set', `${key}=${value}`],
-        );
-      })(),
+      ...Object.entries(flattenRecord(cfg.getTemplateValues() ?? {})).flatMap(
+        ([key, value]) => ['--set', `${key}=${value}`],
+      ),
     ],
     cwd,
     logger,
@@ -384,9 +337,10 @@ export async function prepare(
  */
 export async function publish(
   pluginConfig: HelmPluginConfig,
-  context: Context,
+  context: PublishContext,
 ): Promise<void> {
-  const { cwd, logger } = context;
+  const { logger } = context;
+  const cwd = context.cwd ?? process.cwd();
   const cfg = new HelmConfig(pluginConfig);
 
   logger.log('publish: starting');
@@ -424,23 +378,22 @@ export async function publish(
         `usernamePresent=${haveUser}, passwordPresent=${havePass}`,
     );
 
-    const steps: string[] = [];
-    if (cfg.getOciInsecure() && hostPort) {
-      const cfgJson = `{"auths":{"${hostPort}":{"insecure":true}}}`;
-      steps.push(
-        'mkdir --parents /root/.config/helm/registry',
-        `printf %s '${cfgJson}' > /root/.config/helm/registry/config.json`,
-      );
-    }
-    if (haveUser && havePass && hostPort) {
-      steps.push(
-        `helm registry login${insecureLoginFlag} --username=${username} --password=${password} ${hostPort}`,
-      );
-    }
-
-    for (const tgz of files) {
-      steps.push(`helm push ${tgz} ${cfg.getOciRepo()}${plainHttpFlag}`);
-    }
+    const steps = [
+      ...(cfg.getOciInsecure() && hostPort
+        ? [
+            'mkdir --parents /root/.config/helm/registry',
+            `printf %s '{"auths":{"${hostPort}":{"insecure":true}}}' > /root/.config/helm/registry/config.json`,
+          ]
+        : []),
+      ...(haveUser && havePass && hostPort
+        ? [
+            `helm registry login${insecureLoginFlag} --username=${username} --password=${password} ${hostPort}`,
+          ]
+        : []),
+      ...files.map(
+        (tgz) => `helm push ${tgz} ${cfg.getOciRepo()}${plainHttpFlag}`,
+      ),
+    ];
 
     const script = steps.join(' && ');
     await runDockerShell(helmImage, script, cwd, logger);
@@ -492,8 +445,6 @@ export async function publish(
     fs.mkdirSync(tmpWorktree, { recursive: true });
 
     const indexPath = path.join(tmpWorktree, 'index.yaml');
-    let indexDoc = HelmIndex.fromFile(indexPath);
-
     const chart = HelmChart.from(path.join(cwd, cfg.getChartPath()));
 
     const remoteUrl = execSync(`git remote get-url ${ghRepo}`, {
@@ -505,16 +456,14 @@ export async function publish(
       .replace(/^https:\/\/github\.com\//, '')
       .replace(/\.git$/, '');
 
-    for (const tgz of files) {
+    const indexDoc = files.reduce((doc, tgz) => {
       const abs = path.isAbsolute(tgz) ? tgz : path.join(cwd, tgz);
       const filename = path.basename(abs);
       const version = filename.match(/-(\d+\.\d+\.\d+)\.tgz$/)?.[1] || '0.0.0';
       const githubReleaseUrl = `https://github.com/${repoPath}/releases/download/v${version}/${filename}`;
 
-      indexDoc = indexDoc.append(chart, abs, '', {
-        urls: [githubReleaseUrl] as string[],
-      });
-    }
+      return doc.append(chart, abs, '', { urls: [githubReleaseUrl] });
+    }, HelmIndex.fromFile(indexPath));
 
     indexDoc.writeTo(indexPath);
 
@@ -542,7 +491,7 @@ export async function publish(
         logger,
       );
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = messageOf(err);
       if (
         errMsg.includes('nothing to commit') ||
         errMsg.includes('no changes added')
