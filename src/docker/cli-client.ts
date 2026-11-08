@@ -20,18 +20,30 @@ export function shQuote(input: string): string {
 }
 
 /**
+ * Quote a shell word only when it needs it. Words made solely of characters
+ * the shell treats literally are left bare so logged commands stay readable.
+ *
+ * @param input The word to protect.
+ * @returns The word, single-quoted unless it is already safe.
+ */
+export function quoteWord(input: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(input) ? input : shQuote(input);
+}
+
+/**
  * Build a docker pull command string for a given image. The command
  * is deterministic and suitable for logging and testing.
  */
 export function buildDockerPull(image: string): string {
-  return `docker pull ${image}`;
+  return `docker pull ${quoteWord(image)}`;
 }
 
 /**
  * Build a docker run command string. The command includes --rm, any
  * provided add-host entries, volume mounts, an optional entrypoint,
- * a working directory, the image, and argv. Non-option argv tokens
- * are single-quoted via shQuote to preserve spaces reliably.
+ * a working directory, the image, and argv. Every dynamic token is
+ * shell-quoted, so spaces and metacharacters in paths, the image or flags
+ * cannot split or inject commands.
  */
 export function buildDockerRun(
   image: string,
@@ -46,15 +58,17 @@ export function buildDockerRun(
   const parts = [
     'docker run',
     '--rm',
-    ...opts.addHosts.map((h) => `--add-host=${h}`),
-    ...opts.mounts.map(
-      (m) => `--volume=${m.host}:${m.container}${m.readonly ? ':ro' : ''}`,
+    ...opts.addHosts.map((h) => quoteWord(`--add-host=${h}`)),
+    ...opts.mounts.map((m) =>
+      quoteWord(`--volume=${m.host}:${m.container}${m.readonly ? ':ro' : ''}`),
     ),
-    `--workdir=${opts.workdir}`,
-    ...(opts.entrypoint ? [`--entrypoint=${opts.entrypoint}`] : []),
-    image,
+    quoteWord(`--workdir=${opts.workdir}`),
+    ...(opts.entrypoint ? [quoteWord(`--entrypoint=${opts.entrypoint}`)] : []),
+    quoteWord(image),
   ];
-  const quoted = args.map((a) => (a.startsWith('-') ? a : shQuote(a)));
+  const quoted = args.map((a) =>
+    a.startsWith('-') ? quoteWord(a) : shQuote(a),
+  );
   return `${parts.join(' ')} ${quoted.join(' ')}`.trim();
 }
 

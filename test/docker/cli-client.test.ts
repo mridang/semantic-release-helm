@@ -87,3 +87,19 @@ test('buildDockerRun adds read-only mounts and the entrypoint', () => {
     "docker run --rm --volume=/a:/b:ro --workdir=/w --entrypoint=/bin/sh alpine:3 -lc 'echo 1'",
   );
 });
+
+test('buildDockerRun quotes mounts, workdir, entrypoint, image and flags', () => {
+  const cmd = buildDockerRun('img; touch /x', ['--opt=a b', '$(id)'], {
+    workdir: '/w d',
+    mounts: [{ host: '/my repo', container: '/apps' }],
+    addHosts: ['h:g;x'],
+    entrypoint: '/bin/sh -c',
+  });
+  expect(cmd).toBe(
+    "docker run --rm '--add-host=h:g;x' '--volume=/my repo:/apps' '--workdir=/w d' '--entrypoint=/bin/sh -c' 'img; touch /x' '--opt=a b' '$(id)'",
+  );
+});
+
+test('buildDockerPull quotes an image reference that needs it', () => {
+  expect(buildDockerPull('img; id')).toBe("docker pull 'img; id'");
+});
