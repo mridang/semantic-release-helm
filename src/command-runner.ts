@@ -4,6 +4,17 @@ import type { Logger } from './docker/client.js';
 import { isRecord, stringAt } from './utils/object.js';
 
 /**
+ * Hide the user and password of any URL in a piece of log text, so a remote
+ * such as `https://x-access-token:TOKEN@host/o/r.git` never reaches a log.
+ *
+ * @param text Text about to be logged.
+ * @returns The text with `scheme://user:pass@` reduced to `scheme://***@`.
+ */
+function redactCredentials(text: string): string {
+  return text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi, '$1***@');
+}
+
+/**
  * Log captured output when it has content: trimmed if that leaves text,
  * otherwise as captured.
  *
@@ -13,7 +24,7 @@ import { isRecord, stringAt } from './utils/object.js';
 function logCaptured(text: string, logger: Logger): void {
   const trimmed = text.trim();
   if (trimmed.length > 0) {
-    logger.error(trimmed);
+    logger.error(redactCredentials(trimmed));
   } else if (text.length > 0) {
     logger.error(text);
   }
@@ -28,7 +39,8 @@ function logCaptured(text: string, logger: Logger): void {
  * stdout and stderr from the thrown error object, and rethrows the original
  * error to preserve the exit semantics. The command is executed with stdio
  * "pipe" and UTF-8 decoding so that stdout can be captured and returned to
- * callers. The working directory is set to the repository root.
+ * callers. The working directory is set to the repository root. Credentials
+ * embedded in URLs are redacted from everything that is logged.
  *
  * @param cmd Shell command to execute.
  * @param cwd Working directory for the command.
@@ -37,17 +49,17 @@ function logCaptured(text: string, logger: Logger): void {
  * @throws Any error thrown by execSync is rethrown after being logged.
  */
 export function runHostCmd(cmd: string, cwd: string, logger: Logger): string {
-  logger.log(`$ ${cmd}`);
+  logger.log(`$ ${redactCredentials(cmd)}`);
 
   try {
     const out = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf8' });
     const trimmed = out.trim();
 
-    logger.log(trimmed.length > 0 ? trimmed : '(no output)');
+    logger.log(trimmed.length > 0 ? redactCredentials(trimmed) : '(no output)');
 
     return trimmed;
   } catch (err: unknown) {
-    logger.error(`Command failed: ${cmd}`);
+    logger.error(`Command failed: ${redactCredentials(cmd)}`);
 
     if (isRecord(err)) {
       logCaptured(stringAt(err, 'stdout') ?? '', logger);
@@ -55,7 +67,7 @@ export function runHostCmd(cmd: string, cwd: string, logger: Logger): string {
 
       const message = stringAt(err, 'message');
       if (message !== undefined && message.length > 0) {
-        logger.error(message);
+        logger.error(redactCredentials(message));
       }
     }
 

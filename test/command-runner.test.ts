@@ -131,3 +131,35 @@ describe('runHostCmd failure output that is only whitespace', () => {
     }),
   );
 });
+
+describe('runHostCmd credential redaction', () => {
+  const url = 'https://x-access-token:SECRET@github.com/o/r.git';
+
+  it(
+    'logs no line that contains a credential from stdout, stderr, the command or the message',
+    withTempDir((cwd) => {
+      const { logger, stdout, stderr } = captureConsole();
+      const ok = `${process.execPath} -e ${q(`console.log(${q(url)})`)}`;
+      expect(runHostCmd(ok, cwd, logger)).toBe(url);
+
+      const fail = `${process.execPath} -e ${q(
+        `console.error(${q(url)}); console.log(${q(url)}); process.exit(2); // ${url}`,
+      )}`;
+      expect(() => runHostCmd(fail, cwd, logger)).toThrow();
+
+      const logged = stdout() + stderr();
+      expect(logged).not.toContain('SECRET');
+      expect(logged).toContain('https://***@github.com/o/r.git');
+    }),
+  );
+
+  it(
+    'leaves URLs without credentials untouched',
+    withTempDir((cwd) => {
+      const { logger, stdout } = captureConsole();
+      const cmd = `${process.execPath} -e ${q('console.log("https://github.com/o/r.git")')}`;
+      runHostCmd(cmd, cwd, logger);
+      expect(stdout()).toContain('\nhttps://github.com/o/r.git\n');
+    }),
+  );
+});
