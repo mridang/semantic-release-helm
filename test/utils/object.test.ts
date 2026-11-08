@@ -26,3 +26,9 @@ describe('stringAt', () => {
     expect(stringAt({}, 'a')).toBeUndefined();
   });
 });
+
+describe('stringAt with inherited members', () => {
+  it('ignores a property that is only inherited', () => {
+    expect(stringAt(Object.create({ a: 'x' }), 'a')).toBeUndefined();
+  });
+});

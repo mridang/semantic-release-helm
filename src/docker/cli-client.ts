@@ -217,7 +217,8 @@ function withheld(
         .flatMap(echoForms)
         .reduce((acc, form) => acc.split(form).join('***'), text),
     );
-  const scrubbed = scrub(messageOf(error));
+  const scrubbed =
+    isRecord(error) && error.message === '' ? '' : scrub(messageOf(error));
   const safe = code?.startsWith('ERR_')
     ? `Could not start docker (${code}) with the environment variable(s) ${names}; the message is withheld because it may contain their values.`
     : scrubbed.trim().length > 0
