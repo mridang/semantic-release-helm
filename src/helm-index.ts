@@ -103,11 +103,15 @@ export class HelmIndex {
         `Refusing to overwrite ${indexPath}; fix or remove it.`,
       );
     }
-    return new HelmIndex({
-      ...parsed,
-      apiVersion: 'v1',
-      entries: isRecord(parsed.entries) ? parsed.entries : {},
-    });
+    const entries = parsed.entries ?? {};
+    if (!isRecord(entries)) {
+      throw new SemanticReleaseError(
+        'The "entries" of the existing Helm index is not a YAML mapping.',
+        'EINVALIDINDEX',
+        `Refusing to overwrite ${indexPath}; fix or remove it.`,
+      );
+    }
+    return new HelmIndex({ ...parsed, apiVersion: 'v1', entries });
   }
 
   /**
@@ -152,8 +156,19 @@ export class HelmIndex {
     const key = chart.name();
     const previous: unknown = Object.hasOwn(this.currentEntries(), key)
       ? this.currentEntries()[key]
-      : [];
-    const kept = (Array.isArray(previous) ? previous : []).filter(
+      : undefined;
+    if (
+      previous !== undefined &&
+      previous !== null &&
+      !Array.isArray(previous)
+    ) {
+      throw new SemanticReleaseError(
+        `The existing Helm index entry for "${key}" is not a list.`,
+        'EINVALIDINDEX',
+        'Fix or remove it on the gh-pages branch before publishing.',
+      );
+    }
+    const kept = (previous ?? []).filter(
       (e: unknown) =>
         !(isRecord(e) && String(e.version) === String(entry.version)),
     );

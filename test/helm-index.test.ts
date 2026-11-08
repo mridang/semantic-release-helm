@@ -431,19 +431,48 @@ describe('HelmIndex load, append and write of unusual index.yaml content', () =>
     }),
   );
 
-  it(
-    'replaces a non-list value under the appended chart key',
+  it.each([
+    ['a mapping', 'entries:\n  demo:\n    a: 1\n'],
+    ['a scalar', 'entries:\n  demo: nope\n'],
+  ])('refuses to append over a chart key that is %s', (_label, content) =>
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
-      fs.writeFileSync(file, 'entries:\n  demo: nope\n', 'utf8');
+      fs.writeFileSync(file, content, 'utf8');
+      const chart = HelmChart.from(writeChartYaml(base, 'demo', '1.0.0'));
+      const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
+      expect(() => HelmIndex.fromFile(file).append(chart, tgz, '')).toThrow(
+        expect.objectContaining({ code: 'EINVALIDINDEX' }),
+      );
+    })(),
+  );
+
+  it.each([
+    ['null', 'entries: null\n'],
+    ['absent', 'apiVersion: v1\n'],
+    ['a null chart key', 'entries:\n  demo: null\n'],
+  ])('treats %s as empty', (_label, content) =>
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(file, content, 'utf8');
       const chart = HelmChart.from(writeChartYaml(base, 'demo', '1.0.0'));
       const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
       const out = path.join(base, 'out.yaml');
       HelmIndex.fromFile(file).append(chart, tgz, '').writeTo(out);
-      expect(readIndex(out).entries.demo?.map((e) => e.version)).toEqual([
-        '1.0.0',
-      ]);
-    }),
+      expect(readIndex(out).entries.demo).toHaveLength(1);
+    })(),
+  );
+
+  it.each([
+    ['a list', 'entries:\n  - a\n'],
+    ['a string', 'entries: nope\n'],
+  ])('refuses an index whose entries is %s', (_label, content) =>
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(file, content, 'utf8');
+      expect(() => HelmIndex.fromFile(file)).toThrow(
+        expect.objectContaining({ code: 'EINVALIDINDEX' }),
+      );
+    })(),
   );
 
   it(
