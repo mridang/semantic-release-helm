@@ -73,7 +73,8 @@ export class Remote {
   }
 
   /**
-   * Fetch one branch.
+   * Fetch one branch into its remote-tracking ref, whatever the configured
+   * refspec is (a single-branch clone does not track other branches).
    *
    * @param branch Branch name.
    * @returns The branch as fetched, or undefined when the remote has no such
@@ -81,7 +82,12 @@ export class Remote {
    */
   async fetch(branch: string): Promise<Branch | undefined> {
     try {
-      await this.git(['fetch', this.options.name, branch]);
+      const name = this.options.name;
+      await this.git([
+        'fetch',
+        name,
+        `+refs/heads/${branch}:refs/remotes/${name}/${branch}`,
+      ]);
     } catch {
       return undefined;
     }

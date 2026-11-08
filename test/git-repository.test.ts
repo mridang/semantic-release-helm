@@ -141,4 +141,28 @@ describe('GitRepository with real git', () => {
       expect(await repository.removeWorktree(wt)).toBe(false);
     }),
   );
+
+  it(
+    'finds a remote branch in a single-branch clone',
+    withTempDir(async (dir) => {
+      const upstream = path.join(dir, 'upstream');
+      fs.mkdirSync(upstream);
+      initRepo(upstream);
+      git(upstream, 'commit', '--allow-empty', '--quiet', '-m', 'init');
+      git(upstream, 'checkout', '--quiet', '-b', 'pages');
+      fs.writeFileSync(path.join(upstream, 'index.yaml'), 'entries: {}\n');
+      git(upstream, 'add', '.');
+      git(upstream, 'commit', '--quiet', '-m', 'pages');
+      git(upstream, 'checkout', '--quiet', '-');
+      const clone = path.join(dir, 'clone');
+      git(dir, 'clone', '--quiet', '--single-branch', upstream, clone);
+      const repository = await open(clone);
+      const remote = await repository.remote('origin');
+      const fetched = await remote.fetch('pages');
+      expect(fetched).toEqual({ name: 'pages', remote: 'origin' });
+      const wt = path.join(dir, 'wt');
+      await repository.createWorktree(wt, 'pages', fetched);
+      expect(fs.existsSync(path.join(wt, 'index.yaml'))).toBe(true);
+    }),
+  );
 });

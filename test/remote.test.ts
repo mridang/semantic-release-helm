@@ -51,7 +51,11 @@ describe('Remote with a fake runner', () => {
       name: 'gh-pages',
       remote: 'origin',
     });
-    expect(ok.calls[0]?.args).toEqual(['fetch', 'origin', 'gh-pages']);
+    expect(ok.calls[0]?.args).toEqual([
+      'fetch',
+      'origin',
+      '+refs/heads/gh-pages:refs/remotes/origin/gh-pages',
+    ]);
     expect(
       await remoteOf('/repo', 'origin', fails).remote.fetch('gh-pages'),
     ).toBeUndefined();
