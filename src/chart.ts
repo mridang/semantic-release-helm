@@ -270,15 +270,6 @@ export class Chart {
   }
 
   /**
-   * The chart directory, relative to the repository root.
-   *
-   * @returns The directory as configured.
-   */
-  get directory(): string {
-    return this.options.directory;
-  }
-
-  /**
    * The chart name.
    *
    * @returns The name, or an empty string when Chart.yaml has none.
@@ -321,12 +312,15 @@ export class Chart {
   }
 
   /**
-   * The Chart.yaml text of this chart.
+   * The packages, from a list found on disk, that this chart produced:
+   * those named `<name>-<version>.tgz`. Others are leftovers of earlier runs.
    *
-   * @returns The text.
+   * @param found Packages found in the output directory.
+   * @returns The packages of this chart, in the order given.
    */
-  toString(): string {
-    return this.text;
+  select(found: readonly ChartPackage[]): readonly ChartPackage[] {
+    const fileName = `${this.name()}-${this.version() ?? ''}.tgz`;
+    return found.filter((pkg) => pkg.fileName === fileName);
   }
 
   /**
@@ -432,6 +426,10 @@ export class Chart {
       `--destination=${destination}`,
     ]);
     const fileName = `${this.name()}-${this.version() ?? ''}.tgz`;
-    return ChartPackage.at(path.join(this.options.cwd, destination, fileName));
+    return ChartPackage.of(
+      path.join(this.options.cwd, destination, fileName),
+      this.name(),
+      this.version() ?? '',
+    );
   }
 }

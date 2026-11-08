@@ -5,7 +5,12 @@ import * as yaml from 'yaml';
 import { Chart } from '../src/chart.js';
 import { ChartPackage } from '../src/chart-package.js';
 import { DockerImage } from '../src/docker.js';
-import { planGhPages, publishGhPages, verifyGhPages } from '../src/gh-pages.js';
+import {
+  abandonGhPages,
+  planGhPages,
+  publishGhPages,
+  verifyGhPages,
+} from '../src/gh-pages.js';
 import { git } from './utils/git.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
 import { withTempDir } from './utils/tmpdir.js';
@@ -66,10 +71,11 @@ function setup(repo: string) {
   return { context, chart, lines };
 }
 
-const settings = (chart: Chart, repositoryUrl?: string) => ({
+const settings = (chart: Chart, repositoryUrl?: string, url?: string) => ({
   chart,
   remote: 'origin',
   branch: 'gh-pages',
+  url,
   repositoryUrl,
 });
 
@@ -142,6 +148,7 @@ describe('planGhPages and publishGhPages', () => {
       await publishGhPages(context, plan, {
         packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
+        tag: undefined,
       });
       const index = yaml.parse(git(s.remote, 'show', 'gh-pages:index.yaml'));
       expect(index.entries.app[0].urls).toEqual([
@@ -160,6 +167,7 @@ describe('planGhPages and publishGhPages', () => {
       await publishGhPages(context, plan, {
         packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
+        tag: undefined,
       });
       const index = yaml.parse(git(s.remote, 'show', 'gh-pages:index.yaml'));
       expect(index.entries.app[0].urls).toEqual(['app-1.0.0.tgz']);
@@ -182,6 +190,7 @@ describe('planGhPages and publishGhPages', () => {
       await publishGhPages(context, plan, {
         packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
+        tag: undefined,
       });
       const index = yaml.parse(git(s.remote, 'show', 'gh-pages:index.yaml'));
       expect(
@@ -200,6 +209,88 @@ describe('planGhPages and publishGhPages', () => {
       expect(second.worktree.directory).toBe(
         path.join(s.repo, '.gh-pages-tmp'),
       );
+    }),
+  );
+
+  it(
+    'uses the release tag it is given, not one derived from the file name',
+    withTempDir(async (base) => {
+      const s = scenario(base);
+      const { context, chart } = setup(s.repo);
+      const plan = await planGhPages(
+        context,
+        settings(chart, 'https://github.com/o/r.git'),
+      );
+      await publishGhPages(context, plan, {
+        packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
+        author,
+        tag: 'release-1.0.0',
+      });
+      const index = yaml.parse(git(s.remote, 'show', 'gh-pages:index.yaml'));
+      expect(index.entries.app[0].urls).toEqual([
+        'https://github.com/o/r/releases/download/release-1.0.0/app-1.0.0.tgz',
+      ]);
+    }),
+  );
+
+  it(
+    'writes absolute links from ghPages.url when it is set',
+    withTempDir(async (base) => {
+      const s = scenario(base);
+      const { context, chart } = setup(s.repo);
+      const plan = await planGhPages(
+        context,
+        settings(
+          chart,
+          'https://github.com/o/r.git',
+          'https://charts.example.test/',
+        ),
+      );
+      await publishGhPages(context, plan, {
+        packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
+        author,
+        tag: undefined,
+      });
+      const index = yaml.parse(git(s.remote, 'show', 'gh-pages:index.yaml'));
+      expect(index.entries.app[0].urls).toEqual([
+        'https://charts.example.test/app-1.0.0.tgz',
+      ]);
+    }),
+  );
+
+  it(
+    'warns when release links cannot be built',
+    withTempDir(async (base) => {
+      const s = scenario(base);
+      const { context, chart, lines } = setup(s.repo);
+      await planGhPages(context, settings(chart));
+      expect(lines.some((l) => l.includes('cannot build release links'))).toBe(
+        true,
+      );
+    }),
+  );
+
+  it(
+    'removes the working tree when the index is refused',
+    withTempDir(async (base) => {
+      const s = scenario(base);
+      seedPages(s.repo, 'entries: []\n');
+      const { context, chart } = setup(s.repo);
+      await expect(planGhPages(context, settings(chart))).rejects.toThrow();
+      expect(fs.existsSync(path.join(s.repo, '.gh-pages-tmp'))).toBe(false);
+      expect(git(s.repo, 'worktree', 'list')).not.toContain('.gh-pages-tmp');
+    }),
+  );
+
+  it(
+    'abandoning a plan removes the working tree',
+    withTempDir(async (base) => {
+      const s = scenario(base);
+      const { context, chart } = setup(s.repo);
+      const plan = await planGhPages(context, settings(chart));
+      await abandonGhPages(plan);
+      expect(fs.existsSync(path.join(s.repo, '.gh-pages-tmp'))).toBe(false);
+      expect(git(s.repo, 'worktree', 'list')).not.toContain('.gh-pages-tmp');
     }),
   );
 });

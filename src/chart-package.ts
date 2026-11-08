@@ -8,8 +8,34 @@ import * as path from 'node:path';
 export class ChartPackage {
   private readonly file: string;
 
-  private constructor(file: string) {
+  private readonly identity:
+    | { readonly name: string; readonly version: string }
+    | undefined;
+
+  /**
+   * @param file Absolute path of the `.tgz`.
+   * @param identity The chart name and version this package was made from,
+   *   when known; otherwise they are read from the file name.
+   */
+  private constructor(
+    file: string,
+    identity?: { readonly name: string; readonly version: string },
+  ) {
     this.file = file;
+    this.identity = identity;
+  }
+
+  /**
+   * The package a chart produced. Its name and version come from the chart,
+   * not from the file name.
+   *
+   * @param file Absolute path of the `.tgz`.
+   * @param name Chart name.
+   * @param version Chart version.
+   * @returns The package.
+   */
+  static of(file: string, name: string, version: string): ChartPackage {
+    return new ChartPackage(file, { name, version });
   }
 
   /**
@@ -35,16 +61,22 @@ export class ChartPackage {
     return fs
       .readdirSync(directory, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith('.tgz'))
-      .map((entry) => new ChartPackage(path.join(directory, entry.name)));
+      .map((entry) => entry.name)
+      .toSorted()
+      .map((name) => new ChartPackage(path.join(directory, name)));
   }
 
   /**
-   * The absolute path of the file.
+   * The chart name: the one the package was made from, or the file name
+   * without its version.
    *
-   * @returns The path.
+   * @returns The name.
    */
-  get path(): string {
-    return this.file;
+  get name(): string {
+    if (this.identity) {
+      return this.identity.name;
+    }
+    return this.fileName.replace(/(-\d+\.\d+\.\d+)?\.tgz$/, '');
   }
 
   /**
@@ -57,12 +89,15 @@ export class ChartPackage {
   }
 
   /**
-   * The version in the file name, or `0.0.0` when it has none in the form
-   * `-1.2.3.tgz`.
+   * The chart version: the one the package was made from, or the version in
+   * the file name (`0.0.0` when it has none in the form `-1.2.3.tgz`).
    *
    * @returns The version.
    */
   get version(): string {
+    if (this.identity) {
+      return this.identity.version;
+    }
     return /-(\d+\.\d+\.\d+)\.tgz$/.exec(this.fileName)?.[1] ?? '0.0.0';
   }
 

@@ -7,6 +7,7 @@ import {
   setChartVersion,
   templateSetArgs,
 } from '../src/chart.js';
+import { ChartPackage } from '../src/chart-package.js';
 import { DockerImage } from '../src/docker.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
@@ -121,10 +122,12 @@ describe('Chart', () => {
    * the expected core fields without lossy transformations.
    */
   it(
-    'emits valid YAML via toString',
+    'writes valid YAML when saved',
     withTempDir((base: string) => {
-      const chart = chartAt(writeChart(base, 'demo', '9.9.9'));
-      expect(yaml.parse(chart.toString()) as ChartYaml).toEqual({
+      const dir = writeChart(base, 'demo', '9.9.9');
+      chartAt(dir).save();
+      const text = fs.readFileSync(path.join(dir, 'Chart.yaml'), 'utf8');
+      expect(yaml.parse(text) as ChartYaml).toEqual({
         apiVersion: 'v2',
         name: 'demo',
         version: '9.9.9',
@@ -365,7 +368,10 @@ describe('Chart working with Helm', () => {
         ['template', 'sr-check', 'app', '--set', 'a.b=c', '--set', 'n=1'],
         ['package', 'app', '--destination=dist/charts'],
       ]);
-      expect(pkg.path).toBe(path.join(base, 'dist', 'charts', 'app-1.2.3.tgz'));
+      expect(pkg.relativeTo(base)).toBe(
+        path.join('dist', 'charts', 'app-1.2.3.tgz'),
+      );
+      expect(pkg.version).toBe('1.2.3');
     }),
   );
 
@@ -458,6 +464,19 @@ describe('Chart working with Helm', () => {
       expect(lines).toContain(
         'prepare: helm-docs failed or missing; skipping docs generation',
       );
+    }),
+  );
+
+  it(
+    'selects only its own package from a listing',
+    withTempDir((base) => {
+      const { chart } = chartIn(base);
+      const found = ['app-1.2.3.tgz', 'app-1.0.0.tgz', 'other-1.2.3.tgz'].map(
+        (n) => ChartPackage.at(path.join(base, n)),
+      );
+      expect(chart.select(found).map((p) => p.fileName)).toEqual([
+        'app-1.2.3.tgz',
+      ]);
     }),
   );
 

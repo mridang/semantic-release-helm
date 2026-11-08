@@ -7,11 +7,17 @@ import { ChartPackage } from '../src/chart-package.js';
 import { withTempDir } from './utils/tmpdir.js';
 
 describe('ChartPackage', () => {
+  it('takes its identity from the chart when it was made from one', () => {
+    const pkg = ChartPackage.of('/r/x.tgz', 'app', '1.0.0-beta.1');
+    expect(pkg.name).toBe('app');
+    expect(pkg.version).toBe('1.0.0-beta.1');
+  });
+
   it('reads the version and file name from the file name', () => {
     const pkg = ChartPackage.at('/r/dist/charts/app-1.2.3.tgz');
     expect(pkg.fileName).toBe('app-1.2.3.tgz');
     expect(pkg.version).toBe('1.2.3');
-    expect(pkg.path).toBe('/r/dist/charts/app-1.2.3.tgz');
+    expect(pkg.name).toBe('app');
     expect(pkg.relativeTo('/r')).toBe(
       path.join('dist', 'charts', 'app-1.2.3.tgz'),
     );
@@ -36,11 +42,13 @@ describe('ChartPackage', () => {
   it(
     'finds only the .tgz files of a directory',
     withTempDir((dir) => {
+      fs.writeFileSync(path.join(dir, 'b-1.0.0.tgz'), 'b');
       fs.writeFileSync(path.join(dir, 'a-1.0.0.tgz'), 'a');
       fs.writeFileSync(path.join(dir, 'index.yaml'), 'x');
       fs.mkdirSync(path.join(dir, 'b-2.0.0.tgz'));
       expect(ChartPackage.find(dir).map((p) => p.fileName)).toEqual([
         'a-1.0.0.tgz',
+        'b-1.0.0.tgz',
       ]);
     }),
   );

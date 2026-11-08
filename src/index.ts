@@ -8,7 +8,12 @@ import type {
 import { Chart } from './chart.js';
 import { ChartPackage } from './chart-package.js';
 import { assertDockerAvailable, DockerImage } from './docker.js';
-import { planGhPages, publishGhPages, verifyGhPages } from './gh-pages.js';
+import {
+  abandonGhPages,
+  planGhPages,
+  publishGhPages,
+  verifyGhPages,
+} from './gh-pages.js';
 import { OciRegistry } from './oci-registry.js';
 import { HelmConfig, HelmPluginConfig } from './plugin-config.js';
 import { redactCredentials } from './utils/redact.js';
@@ -196,6 +201,47 @@ export async function prepare(
 }
 
 /**
+ * Push the packages to the configured OCI registry, one after the other.
+ *
+ * @param cfg Plugin configuration.
+ * @param context The step's logger and directory.
+ * @param packages The packages to push.
+ */
+async function publishToOci(
+  cfg: HelmConfig,
+  context: { readonly logger: PublishContext['logger']; readonly cwd: string },
+  packages: readonly ChartPackage[],
+): Promise<void> {
+  const { logger, cwd } = context;
+  const ociRepo = redactCredentials(cfg.getOciRepo() ?? '');
+  logger.log(
+    `publish: OCI mode -> repo="${ociRepo}", ` +
+      `insecure=${cfg.getOciInsecure()}, ` +
+      `usernamePresent=${cfg.hasOciUser()}, passwordPresent=${cfg.hasOciPass()}`,
+  );
+
+  const registry = new OciRegistry({
+    repo: cfg.getOciRepo() ?? '',
+    hostPort: cfg.getOciHostPort(),
+    insecure: cfg.getOciInsecure(),
+    username: cfg.getOciUsername(),
+    password: cfg.getOciPassword(),
+    helm: imagesOf(cfg, context).helm,
+    cwd,
+  });
+  for (const pkg of packages) {
+    const published = await registry.publish(pkg);
+    if (published.digest !== undefined) {
+      logger.log(`publish: pushed ${pkg.fileName} as ${published.digest}`);
+    }
+  }
+
+  logger.log(
+    `{ "helm": { "pushed": ${packages.length}, "repo": "${ociRepo}" } }`,
+  );
+}
+
+/**
  * semantic-release `publish` step. Publishes the packaged chart(s) to:
  * - an OCI registry (optional), and/or
  * - a GitHub Pages branch (default).
@@ -234,70 +280,65 @@ export async function publish(
 
   logger.log('publish: starting');
 
-  const packages = ChartPackage.find(`${cwd}/dist/charts`);
-  if (packages.length === 0) {
+  const found = ChartPackage.find(`${cwd}/dist/charts`);
+  if (found.length === 0) {
     throw new SemanticReleaseError(
       'No packaged chart found.',
       'ENOPACKAGEDCHART',
       'Prepare step must package chart before publish.',
     );
   }
-  logger.log(`publish: found ${packages.length} packaged chart(s)`);
 
-  const chart = chartOf(cfg, here);
-  const ghPlan = cfg.isGhEnabled()
+  const chart = cfg.isGhEnabled() ? chartOf(cfg, here) : undefined;
+  const packages = chart ? chart.select(found) : found;
+  if (packages.length === 0) {
+    throw new SemanticReleaseError(
+      'No packaged chart found.',
+      'ENOPACKAGEDCHART',
+      `Prepare step must package ${chart?.name()} ${chart?.version()} before publish.`,
+    );
+  }
+  logger.log(`publish: found ${packages.length} packaged chart(s)`);
+  if (packages.length < found.length) {
+    logger.log(
+      `publish: ignoring ${found.length - packages.length} packaged chart(s) of other versions`,
+    );
+  }
+
+  const ghPlan = chart
     ? await planGhPages(here, {
         chart,
         remote: cfg.getGhRepo(),
         branch: cfg.getGhBranch(),
+        url: cfg.getGhUrl(),
         repositoryUrl: context.options?.repositoryUrl,
       })
     : undefined;
 
-  if (cfg.isOciEnabled()) {
-    const haveUser = cfg.hasOciUser();
-    const havePass = cfg.hasOciPass();
-    const ociRepo = redactCredentials(cfg.getOciRepo() ?? '');
+  try {
+    if (cfg.isOciEnabled()) {
+      await publishToOci(cfg, here, packages);
+    }
+    if (ghPlan) {
+      await publishGhPages(here, ghPlan, {
+        packages,
+        tag: context.nextRelease?.gitTag,
+        author: {
+          name: process.env.GIT_AUTHOR_NAME || COMMIT_NAME,
+          email: process.env.GIT_AUTHOR_EMAIL || COMMIT_EMAIL,
+        },
+      });
 
-    logger.log(
-      `publish: OCI mode -> repo="${ociRepo}", ` +
-        `insecure=${cfg.getOciInsecure()}, ` +
-        `usernamePresent=${haveUser}, passwordPresent=${havePass}`,
-    );
-
-    const registry = new OciRegistry({
-      repo: cfg.getOciRepo() ?? '',
-      hostPort: cfg.getOciHostPort(),
-      insecure: cfg.getOciInsecure(),
-      username: cfg.getOciUsername(),
-      password: cfg.getOciPassword(),
-      helm: imagesOf(cfg, here).helm,
-      cwd,
-    });
-    await packages.reduce(
-      (previous, pkg) =>
-        previous.then(() => registry.publish(pkg)).then(() => undefined),
-      Promise.resolve(),
-    );
-
-    logger.log(
-      `{ "helm": { "pushed": ${packages.length}, "repo": "${ociRepo}" } }`,
-    );
-  }
-
-  if (ghPlan) {
-    await publishGhPages(here, ghPlan, {
-      packages,
-      author: {
-        name: process.env.GIT_AUTHOR_NAME || COMMIT_NAME,
-        email: process.env.GIT_AUTHOR_EMAIL || COMMIT_EMAIL,
-      },
-    });
-
-    logger.log(
-      '{ "helm": { "published": "gh-pages", "path": "dist/charts", ' +
-        '"merged": true } }',
-    );
+      logger.log(
+        '{ "helm": { "published": "gh-pages", "path": "dist/charts", ' +
+          '"merged": true } }',
+      );
+    }
+  } catch (error) {
+    if (ghPlan) {
+      await abandonGhPages(ghPlan);
+    }
+    throw error;
   }
 
   logger.log('publish: done');

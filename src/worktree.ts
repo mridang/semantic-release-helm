@@ -104,6 +104,8 @@ export class Worktree {
   async commit(message: string, author: Author): Promise<Commit | undefined> {
     const dir = this.options.directory;
     await this.git(['-C', dir, 'add', '.']);
+    const pending = await this.changes();
+    this.options.logger.log(`git: ${pending.length} path(s) changed`);
     if (!(await this.hasStagedChanges())) {
       this.options.logger.log('gh-pages: no changes to commit');
       return undefined;
