@@ -515,3 +515,27 @@ describe('HelmIndex.append with unusual chart names', () => {
     }),
   );
 });
+
+describe('HelmIndex key order', () => {
+  it(
+    'writes apiVersion, entries, other keys, then generated',
+    withTempDir((base: string) => {
+      const file = path.join(base, 'index.yaml');
+      fs.writeFileSync(
+        file,
+        'generated: old\nannotations:\n  a: b\nentries: {}\n',
+        'utf8',
+      );
+      const chart = HelmChart.from(writeChartYaml(base, 'demo', '1.0.0'));
+      const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
+      const out = path.join(base, 'out.yaml');
+      HelmIndex.fromFile(file).append(chart, tgz, '').writeTo(out);
+      expect(Object.keys(yaml.parse(fs.readFileSync(out, 'utf8')))).toEqual([
+        'apiVersion',
+        'entries',
+        'annotations',
+        'generated',
+      ]);
+    }),
+  );
+});

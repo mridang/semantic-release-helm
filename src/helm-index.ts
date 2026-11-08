@@ -62,6 +62,22 @@ function passthroughAllExceptReserved(
 }
 
 /**
+ * The members of a document other than the named ones, in their order.
+ *
+ * @param doc The document.
+ * @param omit Keys to leave out.
+ * @returns The remaining members.
+ */
+function without(
+  doc: Readonly<Record<string, unknown>>,
+  omit: readonly string[],
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(doc).filter(([key]) => !omit.includes(key)),
+  );
+}
+
+/**
  * An immutable Helm index that can be loaded, merged, and serialized.
  * Methods return new instances to make merges predictable in tests.
  */
@@ -111,7 +127,11 @@ export class HelmIndex {
         `Refusing to overwrite ${indexPath}; fix or remove it.`,
       );
     }
-    return new HelmIndex({ ...parsed, apiVersion: 'v1', entries });
+    return new HelmIndex({
+      apiVersion: 'v1',
+      entries,
+      ...without(parsed, ['apiVersion', 'entries']),
+    });
   }
 
   /**
@@ -174,9 +194,9 @@ export class HelmIndex {
     );
 
     return new HelmIndex({
-      ...this.doc,
       apiVersion: 'v1',
       entries: { ...this.currentEntries(), [key]: [entry, ...kept] },
+      ...without(this.doc, ['apiVersion', 'entries', 'generated']),
       generated: created,
     });
   }
