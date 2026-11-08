@@ -67,22 +67,47 @@ export function commitIfStaged(
 
 /**
  * Turn a git remote URL into the public web base of its repository, for
- * building release download links. Credentials in the URL (`user:token@`)
- * and the port are dropped, and `https://`, `ssh://`, `git://` and
- * scp-style (`git@host:owner/repo`) remotes are understood, so a token can
- * never reach a published index.
+ * building release download links. scp-style remotes (`git@host:owner/repo`,
+ * with or without the user) are recognised first, as git does, then
+ * `https://`, `http://`, `ssh://` and `git://` URLs. Credentials are dropped,
+ * and the port is kept only for `http` and `https`. No host is ever guessed:
+ * local paths and `file://` remotes yield `undefined`.
  *
- * @param remoteUrl Output of `git remote get-url`.
- * @returns A URL such as `https://github.com/owner/repo`.
+ * @param remoteUrl A git remote URL, such as the output of `git remote get-url`.
+ * @returns A URL such as `https://github.com/owner/repo`, or undefined when
+ *   the remote has no host to derive it from.
  */
-export function repositoryWebBase(remoteUrl: string): string {
+export function repositoryWebBase(remoteUrl: string): string | undefined {
   const trimmed = remoteUrl.trim();
   const scp = /^(?:[^@/:]+@)?([^:/@]+):(?!\/\/)(.+)$/.exec(trimmed);
-  const { host, pathname } = URL.canParse(trimmed)
-    ? { host: new URL(trimmed).hostname, pathname: new URL(trimmed).pathname }
-    : { host: scp?.[1] ?? '', pathname: scp?.[2] ?? trimmed };
-  const repoPath = pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/, '');
-  return `https://${host || 'github.com'}/${repoPath}`;
+  const parts = scp
+    ? { host: scp[1] ?? '', pathname: scp[2] ?? '' }
+    : urlParts(trimmed);
+  if (!parts || parts.host.length === 0) {
+    return undefined;
+  }
+  const repoPath = parts.pathname
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\.git$/, '');
+  return repoPath.length > 0 ? `https://${parts.host}/${repoPath}` : undefined;
+}
+
+/**
+ * Split a URL remote into its host and path.
+ *
+ * @param value The remote.
+ * @returns The host (with the port for http and https) and the path, or
+ *   undefined when the value is not a URL.
+ */
+function urlParts(
+  value: string,
+): { readonly host: string; readonly pathname: string } | undefined {
+  if (!URL.canParse(value)) {
+    return undefined;
+  }
+  const url = new URL(value);
+  const web = url.protocol === 'http:' || url.protocol === 'https:';
+  return { host: web ? url.host : url.hostname, pathname: url.pathname };
 }
 
 /**

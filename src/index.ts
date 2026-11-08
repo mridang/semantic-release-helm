@@ -442,15 +442,19 @@ export async function publish(
       cwd,
       encoding: 'utf8',
     }).trim();
-    const repoBase = repositoryWebBase(remoteUrl);
+    const repoBase =
+      repositoryWebBase(remoteUrl) ??
+      repositoryWebBase(context.options?.repositoryUrl ?? '');
 
     const indexDoc = files.reduce((doc, tgz) => {
       const abs = path.isAbsolute(tgz) ? tgz : path.join(cwd, tgz);
       const filename = path.basename(abs);
       const version = filename.match(/-(\d+\.\d+\.\d+)\.tgz$/)?.[1] || '0.0.0';
-      const githubReleaseUrl = `${repoBase}/releases/download/v${version}/${filename}`;
+      const releaseUrl = repoBase
+        ? `${repoBase}/releases/download/v${version}/${filename}`
+        : filename;
 
-      return doc.append(chart, abs, '', { urls: [githubReleaseUrl] });
+      return doc.append(chart, abs, '', { urls: [releaseUrl] });
     }, HelmIndex.fromFile(indexPath));
 
     indexDoc.writeTo(indexPath);

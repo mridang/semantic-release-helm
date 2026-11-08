@@ -95,9 +95,13 @@ describe('repositoryWebBase', () => {
     ['https://github.com/o/r.git', 'https://github.com/o/r'],
     ['https://github.com/o/r', 'https://github.com/o/r'],
     ['git@github.com:o/r.git', 'https://github.com/o/r'],
+    ['ghes.corp:org/repo.git', 'https://ghes.corp/org/repo'],
+    ['ghes.corp:8443/org/repo.git', 'https://ghes.corp/8443/org/repo'],
     ['ssh://git@github.com/o/r.git', 'https://github.com/o/r'],
     ['ssh://git@github.com:2222/o/r.git', 'https://github.com/o/r'],
     ['git://github.com/o/r.git', 'https://github.com/o/r'],
+    ['https://ghes.corp:8443/o/r.git', 'https://ghes.corp:8443/o/r'],
+    ['http://ghes.corp:8080/o/r', 'https://ghes.corp:8080/o/r'],
     [
       'https://x-access-token:TOKEN@github.com/o/r.git',
       'https://github.com/o/r',
@@ -106,6 +110,17 @@ describe('repositoryWebBase', () => {
     ['git@ghe.example.test:o/r.git\n', 'https://ghe.example.test/o/r'],
   ])('maps %s', (remote, expected) => {
     expect(repositoryWebBase(remote)).toBe(expected);
+  });
+
+  it.each([
+    ['file:///srv/git/r.git'],
+    ['/srv/git/r.git'],
+    ['../r.git'],
+    ['r.git'],
+    [''],
+    ['https://github.com/'],
+  ])('derives nothing from %j', (remote) => {
+    expect(repositoryWebBase(remote)).toBeUndefined();
   });
 
   it('never lets a token reach the result', () => {
