@@ -1,6 +1,19 @@
+import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
 import { RemoteUrl } from '../src/remote-url.js';
+
+interface InsecureRemote {
+  remote: string;
+  webBase: string;
+}
+
+const insecure = JSON.parse(
+  await readFile(
+    new URL('fixtures/insecure-remotes.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<'ghes' | 'internal', InsecureRemote>;
 
 const base = (text: string) => RemoteUrl.parse(text).webBase();
 
@@ -15,14 +28,18 @@ describe('RemoteUrl.webBase', () => {
     ['ssh://git@github.com:2222/o/r.git', 'https://github.com/o/r'],
     ['git://github.com/o/r.git', 'https://github.com/o/r'],
     ['https://ghes.corp:8443/o/r.git', 'https://ghes.corp:8443/o/r'],
-    ['http://ghes.corp:8080/o/r', 'http://ghes.corp:8080/o/r'],
-    ['http://git.internal:3000/o/r.git', 'http://git.internal:3000/o/r'],
+    [insecure.ghes.remote, insecure.ghes.webBase],
+    [insecure.internal.remote, insecure.internal.webBase],
     [
       'https://x-access-token:TOKEN@github.com/o/r.git',
       'https://github.com/o/r',
     ],
     ['https://user@ghe.example.test/o/r.git/', 'https://ghe.example.test/o/r'],
     ['git@ghe.example.test:o/r.git\n', 'https://ghe.example.test/o/r'],
+    ['https://github.com/o/r///', 'https://github.com/o/r'],
+    ['https://github.com///o/r.git/', 'https://github.com/o/r'],
+    [`https://github.com/o/r${'/'.repeat(200_000)}`, 'https://github.com/o/r'],
+    [`https://github.com${'/'.repeat(200_000)}o/r`, 'https://github.com/o/r'],
   ])('maps %s', (remote, expected) => {
     expect(base(remote)).toBe(expected);
   });
@@ -35,7 +52,7 @@ describe('RemoteUrl.webBase', () => {
     [''],
     ['https://github.com/'],
     ['git@gh-work:o/r.git'],
-    ['C:\\path\\repo'],
+    [String.raw`C:\path\repo`],
     ['C:/path/repo'],
     ['git@[::1]:o/r'],
     ['file://server/share/repo'],

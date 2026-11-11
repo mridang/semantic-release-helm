@@ -7,6 +7,13 @@ import {
   statusOf,
 } from '../../src/utils/error.js';
 
+/**
+ * Clears the message of an error, so a test can cover an error with no message.
+ */
+function clearMessage<T extends Error>(error: T): T {
+  return Object.assign(error, { message: '' });
+}
+
 describe('messageOf', () => {
   it('reads the message of an Error', () => {
     expect(messageOf(new Error('boom'))).toBe('boom');
@@ -20,7 +27,9 @@ describe('messageOf', () => {
 
   it('describes an error without a message by its code', () => {
     expect(
-      messageOf(Object.assign(new Error(''), { code: 'ECONNREFUSED' })),
+      messageOf(
+        Object.assign(clearMessage(new Error('x')), { code: 'ECONNREFUSED' }),
+      ),
     ).toBe('ECONNREFUSED');
   });
 
@@ -28,21 +37,28 @@ describe('messageOf', () => {
     const inner = Object.assign(new Error('connect ECONNREFUSED ::1:443'), {
       code: 'ECONNREFUSED',
     });
-    expect(messageOf(new AggregateError([inner, new Error('other')], ''))).toBe(
-      'connect ECONNREFUSED ::1:443',
-    );
+    expect(
+      messageOf(
+        clearMessage(new AggregateError([inner, new Error('other')], 'x')),
+      ),
+    ).toBe('connect ECONNREFUSED ::1:443');
   });
 
   it('prefers the code of an aggregate error over its inner errors', () => {
-    const error = Object.assign(new AggregateError([new Error('inner')], ''), {
-      code: 'ECONNREFUSED',
-    });
+    const error = Object.assign(
+      clearMessage(new AggregateError([new Error('inner')], 'x')),
+      {
+        code: 'ECONNREFUSED',
+      },
+    );
     expect(messageOf(error)).toBe('ECONNREFUSED');
   });
 
   it('falls back to the name of an error with nothing else to say', () => {
-    expect(messageOf(new AggregateError([], ''))).toBe('AggregateError');
-    expect(messageOf(new TypeError(''))).toBe('TypeError');
+    expect(messageOf(clearMessage(new AggregateError([], 'x')))).toBe(
+      'AggregateError',
+    );
+    expect(messageOf(clearMessage(new TypeError('x')))).toBe('TypeError');
   });
 
   it('recognises an error from another realm by its shape', () => {
