@@ -1,5 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as yaml from 'yaml';
 import { Chart } from '../src/chart.js';
 import { ChartPackage } from '../src/chart-package.js';
@@ -42,7 +42,7 @@ function writeChartYaml(
     name,
     version,
     description: 'X',
-    ...(extra ?? {}),
+    ...extra,
   });
   fs.writeFileSync(chartFile, doc, 'utf8');
   return chartDir;

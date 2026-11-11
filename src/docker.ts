@@ -41,6 +41,7 @@ export interface DockerImageOptions extends CommandContext {
 export interface DockerRunOptions {
   /** Replaces the image entrypoint. */
   readonly entrypoint?: string;
+
   /**
    * Variables for the container. Only their names reach the command line;
    * the values travel through the environment of the `docker` process.
@@ -51,11 +52,10 @@ export interface DockerRunOptions {
 /**
  * The argument list of `docker run` for an image. Every value is a separate
  * argument, so nothing needs quoting.
- *
- * @param image Image reference.
- * @param args Arguments for the container.
- * @param settings Working directory, mounts, hosts, entrypoint and the names
- *   of the environment variables to pass through.
+ * @param image - Image reference.
+ * @param args - Arguments for the container.
+ * @param settings - Working directory, mounts, hosts, entrypoint and the names
+ * of the environment variables to pass through.
  * @returns The arguments that follow `docker`.
  */
 export function dockerRunArgs(
@@ -86,8 +86,7 @@ export function dockerRunArgs(
 
 /**
  * The forms in which the runtime might echo an environment value.
- *
- * @param value An environment value.
+ * @param value - An environment value.
  * @returns The raw, JSON-escaped, URL-encoded and base64 forms.
  */
 function echoForms(value: string): readonly string[] {
@@ -103,9 +102,8 @@ function echoForms(value: string): readonly string[] {
  * Remove the values of environment variables from a piece of text, in the
  * forms the runtime might echo them. Values shorter than three characters
  * are left alone, because removing them would mangle the whole text.
- *
- * @param text Text about to be logged or put in an error.
- * @param env The environment of the run.
+ * @param text - Text about to be logged or put in an error.
+ * @param env - The environment of the run.
  * @returns The text with the values replaced, and credentials in URLs hidden.
  */
 function scrubValues(
@@ -125,9 +123,8 @@ function scrubValues(
  * A failure of the spawn itself (an `ERR_*` code) gets a fixed message that
  * names the variables and the code, and an empty message is replaced by a
  * fixed one. `code` and `status` are kept.
- *
- * @param error What the runner threw.
- * @param env The environment of the failed run.
+ * @param error - What the runner threw.
+ * @param env - The environment of the failed run.
  * @returns A sanitised error.
  */
 function withheld(
@@ -165,8 +162,7 @@ function withheld(
 
 /**
  * Check that the Docker CLI can be started and answers `docker version`.
- *
- * @param context Logger, directory and runner.
+ * @param context - Logger, directory and runner.
  * @throws SemanticReleaseError (`ENODOCKER`) when it cannot.
  */
 export async function assertDockerAvailable(
@@ -198,8 +194,8 @@ export class DockerImage {
   private readonly options: DockerImageOptions;
 
   /**
-   * @param options Image reference, logger, repository directory, and
-   *   optional overrides of the runner, working directory, mounts and hosts.
+   * @param options - Image reference, logger, repository directory, and
+   * optional overrides of the runner, working directory, mounts and hosts.
    */
   constructor(options: DockerImageOptions) {
     this.options = options;
@@ -207,7 +203,6 @@ export class DockerImage {
 
   /**
    * The image reference, including the tag.
-   *
    * @returns The reference.
    */
   get reference(): string {
@@ -216,7 +211,6 @@ export class DockerImage {
 
   /**
    * Pull the image.
-   *
    * @returns This image, once it is available locally.
    * @throws SemanticReleaseError (`EIMAGEPULLFAILED`) when the pull fails.
    */
@@ -246,9 +240,8 @@ export class DockerImage {
    * from the failure message, and a failure of the spawn itself is replaced
    * by a fixed message, because the runtime can echo a value in its own
    * message.
-   *
-   * @param args Arguments for the container.
-   * @param options Entrypoint override and environment variables.
+   * @param args - Arguments for the container.
+   * @param options - Entrypoint override and environment variables.
    * @returns The trimmed standard output.
    * @throws The runner's error, sanitised.
    */

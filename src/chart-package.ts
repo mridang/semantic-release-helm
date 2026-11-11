@@ -9,13 +9,12 @@ export class ChartPackage {
   private readonly file: string;
 
   private readonly identity:
-    | { readonly name: string; readonly version: string }
-    | undefined;
+    { readonly name: string; readonly version: string } | undefined;
 
   /**
-   * @param file Absolute path of the `.tgz`.
-   * @param identity The chart name and version this package was made from,
-   *   when known; otherwise they are read from the file name.
+   * @param file - Absolute path of the `.tgz`.
+   * @param identity - The chart name and version this package was made from,
+   * when known; otherwise they are read from the file name.
    */
   private constructor(
     file: string,
@@ -28,10 +27,9 @@ export class ChartPackage {
   /**
    * The package a chart produced. Its name and version come from the chart,
    * not from the file name.
-   *
-   * @param file Absolute path of the `.tgz`.
-   * @param name Chart name.
-   * @param version Chart version.
+   * @param file - Absolute path of the `.tgz`.
+   * @param name - Chart name.
+   * @param version - Chart version.
    * @returns The package.
    */
   static of(file: string, name: string, version: string): ChartPackage {
@@ -40,8 +38,7 @@ export class ChartPackage {
 
   /**
    * Wrap a packaged chart file.
-   *
-   * @param file Absolute path of the `.tgz`.
+   * @param file - Absolute path of the `.tgz`.
    * @returns The package.
    */
   static at(file: string): ChartPackage {
@@ -50,8 +47,7 @@ export class ChartPackage {
 
   /**
    * Find the packaged charts in a directory.
-   *
-   * @param directory Absolute path of the directory; it may not exist.
+   * @param directory - Absolute path of the directory; it may not exist.
    * @returns The `.tgz` files in it, as packages.
    */
   static find(directory: string): readonly ChartPackage[] {
@@ -69,7 +65,6 @@ export class ChartPackage {
   /**
    * The chart name: the one the package was made from, or the file name
    * without its version.
-   *
    * @returns The name.
    */
   get name(): string {
@@ -81,7 +76,6 @@ export class ChartPackage {
 
   /**
    * The file name, such as `app-1.2.3.tgz`.
-   *
    * @returns The name.
    */
   get fileName(): string {
@@ -91,7 +85,6 @@ export class ChartPackage {
   /**
    * The chart version: the one the package was made from, or the version in
    * the file name (`0.0.0` when it has none in the form `-1.2.3.tgz`).
-   *
    * @returns The version.
    */
   get version(): string {
@@ -103,8 +96,7 @@ export class ChartPackage {
 
   /**
    * The path of the file relative to a directory.
-   *
-   * @param base The directory, usually the repository root.
+   * @param base - The directory, usually the repository root.
    * @returns The relative path.
    */
   relativeTo(base: string): string {
@@ -113,7 +105,6 @@ export class ChartPackage {
 
   /**
    * The SHA-256 of the file.
-   *
    * @returns The digest as hex.
    */
   digest(): string {

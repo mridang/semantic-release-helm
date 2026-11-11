@@ -2,9 +2,8 @@ import { execFileSync } from 'node:child_process';
 
 /**
  * Run git in a directory and return its output, for building fixtures.
- *
- * @param cwd Directory to run in.
- * @param args Arguments after `git`.
+ * @param cwd - Directory to run in.
+ * @param args - Arguments after `git`.
  * @returns The standard output.
  */
 export function git(cwd: string, ...args: string[]): string {
@@ -13,8 +12,7 @@ export function git(cwd: string, ...args: string[]): string {
 
 /**
  * Initialise a repository with a committer identity.
- *
- * @param dir Directory to initialise.
+ * @param dir - Directory to initialise.
  */
 export function initRepo(dir: string): void {
   git(dir, 'init', '--quiet');

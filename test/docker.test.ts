@@ -122,7 +122,7 @@ describe('DockerImage.pull', () => {
     });
     const failure = await image.pull().then(
       () => undefined,
-      (e: unknown) => e,
+      (error: unknown) => error,
     );
     expect(
       JSON.stringify(failure, Object.getOwnPropertyNames(failure)),
@@ -195,7 +195,7 @@ describe('DockerImage.run', () => {
     });
     const failure = await image.run(['push', url]).then(
       () => undefined,
-      (e: unknown) => e,
+      (error: unknown) => error,
     );
     expect(lines.join('\n')).not.toContain('tok3nvalue');
     expect(String((failure as Error).message)).not.toContain('tok3nvalue');
@@ -231,7 +231,7 @@ describe('DockerImage.run', () => {
     });
     const failure = await image.run(['true'], { env: { PW: value } }).then(
       () => undefined,
-      (e: unknown) => e,
+      (error: unknown) => error,
     );
     expect(failure).toMatchObject({
       message: 'bad *** and *** and ***',
@@ -250,7 +250,7 @@ describe('DockerImage.run', () => {
       .run(['true'], { env: { OCI_PASSWORD: 'sec\u0000ret' } })
       .then(
         () => undefined,
-        (e: unknown) => e,
+        (error: unknown) => error,
       );
     expect(String((failure as Error).message)).toContain(
       '(ERR_INVALID_ARG_VALUE)',

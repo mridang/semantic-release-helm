@@ -97,8 +97,7 @@ export interface HelmPluginConfig {
  *
  * This keeps parsing dependency-free and readable while avoiding
  * hand-rolled tokenization.
- *
- * @param repo OCI URL such as `oci://ghcr.io/org/charts`.
+ * @param repo - OCI URL such as `oci://ghcr.io/org/charts`.
  * @returns A `URL` instance or `undefined` if not parseable.
  */
 function parseOciAsHttp(repo?: string): URL | undefined {
@@ -125,7 +124,6 @@ export class HelmConfig {
 
   /**
    * Values for `helm template` during the prepare step.
-   *
    * @returns A key-value map or `undefined`.
    */
   getTemplateValues(): Record<string, unknown> | undefined {
@@ -134,7 +132,6 @@ export class HelmConfig {
 
   /**
    * The chart directory that contains `Chart.yaml`.
-   *
    * @returns Chart directory path.
    */
   getChartPath(): string {
@@ -143,7 +140,6 @@ export class HelmConfig {
 
   /**
    * Docker image used for Helm CLI operations.
-   *
    * @returns Image reference with tag.
    */
   getHelmImage(): string {
@@ -152,7 +148,6 @@ export class HelmConfig {
 
   /**
    * Docker image used for `helm-docs`.
-   *
    * @returns Image reference with tag.
    */
   getDocsImage(): string {
@@ -161,7 +156,6 @@ export class HelmConfig {
 
   /**
    * Additional arguments for `helm-docs`.
-   *
    * @returns Array of CLI arguments.
    */
   getDocsArgs(): string[] {
@@ -170,7 +164,6 @@ export class HelmConfig {
 
   /**
    * Whether gh-pages publishing is enabled.
-   *
    * @returns True when enabled or not explicitly disabled.
    */
   isGhEnabled(): boolean {
@@ -179,7 +172,6 @@ export class HelmConfig {
 
   /**
    * Public base URL used for absolute URLs in `index.yaml`.
-   *
    * @returns URL string or `undefined`.
    */
   getGhUrl(): string | undefined {
@@ -188,7 +180,6 @@ export class HelmConfig {
 
   /**
    * Git remote used for gh-pages push.
-   *
    * @returns Remote name.
    */
   getGhRepo(): string {
@@ -197,7 +188,6 @@ export class HelmConfig {
 
   /**
    * Branch used for gh-pages content.
-   *
    * @returns Branch name.
    */
   getGhBranch(): string {
@@ -206,7 +196,6 @@ export class HelmConfig {
 
   /**
    * Whether OCI publishing is enabled.
-   *
    * @returns True when `ociRepo` is present.
    */
   isOciEnabled(): boolean {
@@ -215,7 +204,6 @@ export class HelmConfig {
 
   /**
    * Raw OCI repository string.
-   *
    * @returns `oci://…` string or `undefined`.
    */
   getOciRepo(): string | undefined {
@@ -224,7 +212,6 @@ export class HelmConfig {
 
   /**
    * Whether plain HTTP / insecure mode is enabled for OCI.
-   *
    * @returns True when insecure is requested.
    */
   getOciInsecure(): boolean {
@@ -233,7 +220,6 @@ export class HelmConfig {
 
   /**
    * Resolved OCI username, falling back to `OCI_USERNAME`.
-   *
    * @returns Username or `undefined`.
    */
   getOciUsername(): string | undefined {
@@ -242,7 +228,6 @@ export class HelmConfig {
 
   /**
    * Resolved OCI password, falling back to `OCI_PASSWORD`.
-   *
    * @returns Password or `undefined`.
    */
   getOciPassword(): string | undefined {
@@ -251,7 +236,6 @@ export class HelmConfig {
 
   /**
    * True when a username is present for OCI.
-   *
    * @returns Boolean presence.
    */
   hasOciUser(): boolean {
@@ -260,7 +244,6 @@ export class HelmConfig {
 
   /**
    * True when a password is present for OCI.
-   *
    * @returns Boolean presence.
    */
   hasOciPass(): boolean {
@@ -270,7 +253,6 @@ export class HelmConfig {
   /**
    * Host extracted from `ociRepo` using standard URL parsing after
    * replacing the scheme with `http://`.
-   *
    * @returns Hostname or `undefined`.
    */
   getOciHost(): string | undefined {
@@ -281,18 +263,16 @@ export class HelmConfig {
   /**
    * Port extracted from `ociRepo` using standard URL parsing after
    * replacing the scheme with `http://`.
-   *
    * @returns Numeric port or `undefined`.
    */
   getOciPort(): number | undefined {
     const u = parseOciAsHttp(this.cfg.ociRepo);
     const p = u?.port ?? '';
-    return p.length ? Number(p) : undefined;
+    return p.length > 0 ? Number(p) : undefined;
   }
 
   /**
    * Host or `host:port` derived from `ociRepo`.
-   *
    * @returns Host with optional port or `undefined`.
    */
   getOciHostPort(): string | undefined {

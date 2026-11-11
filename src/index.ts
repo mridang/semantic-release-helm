@@ -27,9 +27,8 @@ const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
 
 /**
  * The Helm and helm-docs images, and the chart, for a configuration.
- *
- * @param cfg Plugin configuration.
- * @param context The step's logger and directory.
+ * @param cfg - Plugin configuration.
+ * @param context - The step's logger and directory.
  * @returns The two images.
  */
 function imagesOf(
@@ -44,9 +43,8 @@ function imagesOf(
 
 /**
  * Open the configured chart.
- *
- * @param cfg Plugin configuration.
- * @param context The step's logger and directory.
+ * @param cfg - Plugin configuration.
+ * @param context - The step's logger and directory.
  * @returns The chart.
  */
 function chartOf(
@@ -61,7 +59,7 @@ function chartOf(
 }
 
 /**
- * semantic-release `verifyConditions` step. Verifies that:
+ * Semantic-release `verifyConditions` step. Verifies that:
  * - Docker is available,
  * - required Docker images can be pulled,
  * - the Chart.yaml exists at the configured path,
@@ -71,9 +69,8 @@ function chartOf(
  * The method logs the effective Helm/docs images, reports whether GH Pages
  * mode is enabled and the resolved public URL, and rejects incomplete OCI
  * credentials early with a stable error code.
- *
- * @param pluginConfig Plugin configuration supplied by semantic-release.
- * @param context semantic-release context (logger, cwd, etc).
+ * @param pluginConfig - Plugin configuration supplied by semantic-release.
+ * @param context - Semantic-release context (logger, cwd, etc).
  * @throws SemanticReleaseError when a precondition is not satisfied.
  */
 export async function verifyConditions(
@@ -140,7 +137,7 @@ export async function verifyConditions(
 }
 
 /**
- * semantic-release `prepare` step. Performs all changes that must be included
+ * Semantic-release `prepare` step. Performs all changes that must be included
  * in the release commit before publishing:
  * - sets the chart version in Chart.yaml to `nextRelease.version`,
  * - lints and templates the chart with Helm to fail early on errors,
@@ -150,9 +147,8 @@ export async function verifyConditions(
  * The function intentionally does not create `index.yaml` in `dist/charts` so
  * tests can assert that merge logic occurs only during the gh-pages publish
  * step.
- *
- * @param pluginConfig Plugin configuration supplied by semantic-release.
- * @param context semantic-release context (cwd, logger, nextRelease).
+ * @param pluginConfig - Plugin configuration supplied by semantic-release.
+ * @param context - Semantic-release context (cwd, logger, nextRelease).
  * @throws SemanticReleaseError if required inputs are missing or invalid.
  */
 export async function prepare(
@@ -202,10 +198,9 @@ export async function prepare(
 
 /**
  * Push the packages to the configured OCI registry, one after the other.
- *
- * @param cfg Plugin configuration.
- * @param context The step's logger and directory.
- * @param packages The packages to push.
+ * @param cfg - Plugin configuration.
+ * @param context - The step's logger and directory.
+ * @param packages - The packages to push.
  */
 async function publishToOci(
   cfg: HelmConfig,
@@ -242,7 +237,7 @@ async function publishToOci(
 }
 
 /**
- * semantic-release `publish` step. Publishes the packaged chart(s) to:
+ * Semantic-release `publish` step. Publishes the packaged chart(s) to:
  * - an OCI registry (optional), and/or
  * - a GitHub Pages branch (default).
  *
@@ -264,9 +259,8 @@ async function publishToOci(
  *
  * The remote-first worktree creation avoids non-fast-forward push failures when
  * a remote `gh-pages` already exists with history.
- *
- * @param pluginConfig Plugin configuration supplied by semantic-release.
- * @param context semantic-release context (cwd, logger).
+ * @param pluginConfig - Plugin configuration supplied by semantic-release.
+ * @param context - Semantic-release context (cwd, logger).
  * @throws SemanticReleaseError if no packaged charts are present.
  */
 export async function publish(

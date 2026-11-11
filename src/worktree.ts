@@ -52,7 +52,7 @@ export class Worktree {
   private readonly options: WorktreeOptions;
 
   /**
-   * @param options Directory, branch, logger, base directory and runner.
+   * @param options - Directory, branch, logger, base directory and runner.
    */
   constructor(options: WorktreeOptions) {
     this.options = options;
@@ -60,7 +60,6 @@ export class Worktree {
 
   /**
    * The directory of the working tree.
-   *
    * @returns The path.
    */
   get directory(): string {
@@ -70,7 +69,6 @@ export class Worktree {
   /**
    * The branch checked out here, with this directory attached so a push runs
    * from the right place.
-   *
    * @returns The branch.
    */
   get branch(): Branch {
@@ -79,7 +77,6 @@ export class Worktree {
 
   /**
    * The paths with changes, untracked files included.
-   *
    * @returns The changes, in the order git lists them.
    */
   async changes(): Promise<readonly Change[]> {
@@ -102,9 +99,8 @@ export class Worktree {
   /**
    * Stage everything and commit it. Whether anything is staged is decided
    * from git's exit status, not from the wording of any message.
-   *
-   * @param message Commit message.
-   * @param author Author name and email.
+   * @param message - Commit message.
+   * @param author - Author name and email.
    * @returns The commit, or undefined when there was nothing to commit.
    */
   async commit(message: string, author: Author): Promise<Commit | undefined> {
@@ -132,7 +128,6 @@ export class Worktree {
 
   /**
    * Remove the working tree, forcibly.
-   *
    * @returns True when git removed it, false when there was nothing to remove.
    */
   async remove(): Promise<boolean> {
@@ -147,7 +142,6 @@ export class Worktree {
   /**
    * Whether the index holds changes that a commit would record
    * (`git diff --cached --quiet` exits 1 when it does).
-   *
    * @returns True when something is staged.
    * @throws Error when git fails for another reason.
    */
@@ -169,8 +163,7 @@ export class Worktree {
 
   /**
    * Run git with logging.
-   *
-   * @param args Arguments after `git`.
+   * @param args - Arguments after `git`.
    * @returns The trimmed standard output.
    */
   private git(args: readonly string[]): Promise<string> {

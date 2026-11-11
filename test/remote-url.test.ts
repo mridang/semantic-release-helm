@@ -35,7 +35,7 @@ describe('RemoteUrl.webBase', () => {
     [''],
     ['https://github.com/'],
     ['git@gh-work:o/r.git'],
-    ['C:\\path\\repo'],
+    [String.raw`C:\path\repo`],
     ['C:/path/repo'],
     ['git@[::1]:o/r'],
     ['file://server/share/repo'],

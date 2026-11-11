@@ -8,10 +8,9 @@ import {
   beforeEach,
   afterEach,
 } from '@jest/globals';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
 import type { StartedTestContainer } from 'testcontainers';
 import * as yaml from 'yaml';
@@ -65,8 +64,8 @@ const dockerAvailable = ((): boolean => {
       },
     };
 
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
+    const __filename = import.meta.filename;
+    const __dirname = import.meta.dirname;
 
     let workdir: string;
     let chartPathInWorkdir: string;
@@ -917,7 +916,7 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
         encoding: 'utf8',
       }).trim();
       execSync(
-        `git checkout --quiet --orphan gh-pages && git rm -rf --quiet . && printf 'entries: []\\n' > index.yaml && git add index.yaml && git commit --quiet -m pages && git push --quiet origin gh-pages && git checkout --quiet -f ${original} && git branch -D --quiet gh-pages`,
+        String.raw`git checkout --quiet --orphan gh-pages && git rm -rf --quiet . && printf 'entries: []\n' > index.yaml && git add index.yaml && git commit --quiet -m pages && git push --quiet origin gh-pages && git checkout --quiet -f ${original} && git branch -D --quiet gh-pages`,
         { cwd: w.repo },
       );
       const { logger } = recording();

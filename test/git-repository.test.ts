@@ -46,7 +46,7 @@ describe('GitRepository.open with a fake runner', () => {
       .remote('https://x:tok3nvalue@host/o/r.git')
       .then(
         () => undefined,
-        (e: unknown) => e,
+        (error: unknown) => error,
       );
     expect(failure).toMatchObject({ code: 'ENOREMOTE' });
     expect(

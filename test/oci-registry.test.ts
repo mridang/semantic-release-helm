@@ -113,7 +113,7 @@ describe('OciRegistry.publish', () => {
     });
     await registry.publish(ChartPackage.at('/repo/dist/charts/my chart.tgz'));
     const script = scriptOf(calls[0]?.args);
-    expect(script).toContain(`--username='a'\\''; id; '\\'''`);
+    expect(script).toContain(String.raw`--username='a'\''; id; '\'''`);
     expect(script).toContain(
       `helm push 'dist/charts/my chart.tgz' 'oci://h/c; id'`,
     );

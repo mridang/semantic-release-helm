@@ -8,21 +8,20 @@
  * `access_token=`, `password=` and `private_token=` query values,
  * `Authorization:` header lines, `Bearer` tokens, and bare GitHub and GitLab
  * tokens (`ghp_`, `github_pat_`, `glpat-`).
- *
- * @param text Text that may contain credentials.
+ * @param text - Text that may contain credentials.
  * @returns The text with every credential replaced by `***`.
  */
 export function redactCredentials(text: string): string {
   return text
-    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:\S*@/gi, '$1***@')
-    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+@/gi, '$1***@')
-    .replace(
+    .replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:\S*@/gi, '$1***@')
+    .replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+@/gi, '$1***@')
+    .replaceAll(
       /([?&](?:access_token|token|password|private_token)=)[^&\s#'"]+/gi,
       '$1***',
     )
-    .replace(/\b((?:proxy-)?authorization)\s*:[^\r\n]*/gi, '$1: ***')
-    .replace(/\bbearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer ***')
-    .replace(
+    .replaceAll(/\b((?:proxy-)?authorization)\s*:[^\r\n]*/gi, '$1: ***')
+    .replaceAll(/\bbearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer ***')
+    .replaceAll(
       /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{16,})/g,
       '***',
     );

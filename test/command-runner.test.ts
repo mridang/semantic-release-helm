@@ -72,8 +72,8 @@ describe('runLogged (real runner, full-stream asserts)', () => {
     withTempDir(async (cwd) => {
       const { logger, stdout, stderr } = captureConsole();
       const code =
-        'process.stdout.write("out\\n");' +
-        'process.stderr.write("err\\n");' +
+        String.raw`process.stdout.write("out\n");` +
+        String.raw`process.stderr.write("err\n");` +
         'process.exit(7);';
 
       const failure = await runLogged(
@@ -84,14 +84,14 @@ describe('runLogged (real runner, full-stream asserts)', () => {
         logger,
       ).then(
         () => undefined,
-        (e: unknown) => e,
+        (error: unknown) => error,
       );
 
       expect(failure).toMatchObject({ status: 7 });
       expect(stdout()).toBe(`$ ${node} -e ${q(code)}\n`);
       expect(stderr()).toMatch(
         new RegExp(
-          `^Command failed: ${node.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} -e [\\s\\S]*\\nout\\nerr\\n[\\s\\S]+$`,
+          String.raw`^Command failed: ${node.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)} -e [\s\S]*\nout\nerr\n[\s\S]+$`,
         ),
       );
     }),
@@ -103,7 +103,7 @@ describe('runLogged failure output that is only whitespace', () => {
     'logs whitespace-only stderr as captured',
     withTempDir(async (cwd) => {
       const { logger, stderr } = captureConsole();
-      const code = 'process.stderr.write("  \\n"); process.exit(3);';
+      const code = String.raw`process.stderr.write("  \n"); process.exit(3);`;
 
       await expect(
         runLogged(run, node, ['-e', code], { cwd }, logger),
@@ -122,7 +122,7 @@ describe('runLogged failure output that is only whitespace', () => {
         runLogged(run, node, ['-e', 'process.exit(4);'], { cwd }, logger),
       ).rejects.toThrow();
       expect(stderr().startsWith('Command failed: ')).toBe(true);
-      expect(stderr().split('\n')[1]).toMatch(/^Command failed/);
+      expect(stderr().split('\n', 2)[1]).toMatch(/^Command failed/);
     }),
   );
 });
@@ -184,7 +184,7 @@ describe('runLogged credential redaction', () => {
         logger,
       ).then(
         () => undefined,
-        (e: unknown) => e,
+        (error: unknown) => error,
       );
       expect(failure).toMatchObject({ status: 3 });
       const text = JSON.stringify(failure, Object.getOwnPropertyNames(failure));

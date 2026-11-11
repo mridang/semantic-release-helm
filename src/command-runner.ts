@@ -6,7 +6,7 @@ import type { ExecOptions, Runner } from './utils/exec.js';
 import { quoteWord } from './utils/shell.js';
 
 /**
- * The two logging methods the plugin uses. semantic-release's logger
+ * The two logging methods the plugin uses. Semantic-release's logger
  * satisfies this, and so does a plain object in tests.
  */
 export interface Logger {
@@ -35,8 +35,7 @@ export interface CommandContext {
  * `stdout` and `stderr` are redacted, and its `code` and `status` are kept.
  * A `SemanticReleaseError` is returned as is, because its text is written
  * by this plugin.
- *
- * @param error Whatever was thrown.
+ * @param error - Whatever was thrown.
  * @returns An error whose text holds no credentials.
  */
 export function redactError(error: unknown): Error {
@@ -60,9 +59,8 @@ export function redactError(error: unknown): Error {
 /**
  * Log captured output when it has content: trimmed if that leaves text,
  * otherwise as captured.
- *
- * @param text The captured output.
- * @param logger Logger receiving the output.
+ * @param text - The captured output.
+ * @param logger - Logger receiving the output.
  */
 function logCaptured(text: string, logger: Logger): void {
   const trimmed = text.trim();
@@ -79,15 +77,14 @@ function logCaptured(text: string, logger: Logger): void {
  * line, the captured output and the message are logged and the error is
  * rethrown. Credentials are redacted from everything that is logged and from
  * the rethrown error. The function knows nothing about what is being run.
- *
- * @param run The runner that executes the program.
- * @param file Program to run.
- * @param args Its arguments.
- * @param options Working directory and extra environment.
- * @param logger Receives the structured log lines.
- * @param sanitize Turns a failure into the error that is logged and thrown;
- *   defaults to redacting credentials, and a caller that passes secrets in
- *   the environment supplies one that also removes their values.
+ * @param run - The runner that executes the program.
+ * @param file - Program to run.
+ * @param args - Its arguments.
+ * @param options - Working directory and extra environment.
+ * @param logger - Receives the structured log lines.
+ * @param sanitize - Turns a failure into the error that is logged and thrown;
+ * defaults to redacting credentials, and a caller that passes secrets in
+ * the environment supplies one that also removes their values.
  * @returns Trimmed standard output.
  * @throws The sanitised error from the runner.
  */

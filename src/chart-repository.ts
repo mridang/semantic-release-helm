@@ -33,9 +33,8 @@ const RESERVED_KEYS: ReadonlySet<string> = new Set([
 /**
  * Collect all non-reserved Chart.yaml keys for an index entry. A small
  * denylist prevents overwriting fields computed by the index writer.
- * appVersion is coerced to string when scalar.
- *
- * @param raw Parsed Chart.yaml map.
+ * AppVersion is coerced to string when scalar..
+ * @param raw - Parsed Chart.yaml map.
  * @returns The passthrough fields.
  */
 function passthroughAllExceptReserved(
@@ -55,9 +54,8 @@ function passthroughAllExceptReserved(
 /**
  * Parse index.yaml text, turning a YAML syntax problem into a coded error
  * that names the file.
- *
- * @param text index.yaml content.
- * @param file Path of the file, for the message.
+ * @param text - Index.yaml content.
+ * @param file - Path of the file, for the message.
  * @returns The parsed value, whatever its shape.
  * @throws SemanticReleaseError (`EINVALIDINDEX`) when it does not parse.
  */
@@ -75,9 +73,8 @@ function parseIndex(text: string, file: string): unknown {
 
 /**
  * The members of a document other than the named ones, in their order.
- *
- * @param doc The document.
- * @param omit Keys to leave out.
+ * @param doc - The document.
+ * @param omit - Keys to leave out.
  * @returns The remaining members.
  */
 function without(
@@ -102,9 +99,9 @@ export class ChartRepository {
   private readonly rest: Readonly<Record<string, unknown>>;
 
   /**
-   * @param file Path of the index.yaml this repository is saved to.
-   * @param entries The chart entries, kept as loaded.
-   * @param rest Every other member of the document, in order.
+   * @param file - Path of the index.yaml this repository is saved to.
+   * @param entries - The chart entries, kept as loaded.
+   * @param rest - Every other member of the document, in order.
    */
   private constructor(
     file: string,
@@ -120,8 +117,7 @@ export class ChartRepository {
    * Open the repository index in a directory: the existing `index.yaml`, or
    * an empty repository when there is none. An absent or null `entries` means
    * empty.
-   *
-   * @param directory Directory that holds (or will hold) `index.yaml`.
+   * @param directory - Directory that holds (or will hold) `index.yaml`.
    * @returns The repository.
    * @throws SemanticReleaseError (`EINVALIDINDEX`) when the file is not valid
    *   YAML, is not a mapping, or its `entries` is not a mapping.
@@ -162,12 +158,11 @@ export class ChartRepository {
    * computed here and all non-reserved Chart.yaml fields. Extra fields are
    * merged last. An existing entry with the same version is replaced rather
    * than duplicated.
-   *
-   * @param chart The chart that was packaged.
-   * @param pkg Its package.
-   * @param baseUrl Base URL for absolute URLs. When blank, the file name is
-   *   used as a relative URL.
-   * @param extra Optional extra fields to merge into the entry.
+   * @param chart - The chart that was packaged.
+   * @param pkg - Its package.
+   * @param baseUrl - Base URL for absolute URLs. When blank, the file name is
+   * used as a relative URL.
+   * @param extra - Optional extra fields to merge into the entry.
    * @returns The repository with the chart added.
    * @throws SemanticReleaseError (`EINVALIDINDEX`) when the existing entry
    *   for this chart is not a list.
@@ -202,14 +197,16 @@ export class ChartRepository {
     const previous: unknown = Object.hasOwn(this.entries, key)
       ? this.entries[key]
       : undefined;
-    if (previous !== undefined && previous !== null) {
-      if (!Array.isArray(previous)) {
-        throw new SemanticReleaseError(
-          `The existing Helm index entry for "${key}" is not a list.`,
-          'EINVALIDINDEX',
-          'Fix or remove it on the gh-pages branch before publishing.',
-        );
-      }
+    if (
+      previous !== undefined &&
+      previous !== null &&
+      !Array.isArray(previous)
+    ) {
+      throw new SemanticReleaseError(
+        `The existing Helm index entry for "${key}" is not a list.`,
+        'EINVALIDINDEX',
+        'Fix or remove it on the gh-pages branch before publishing.',
+      );
     }
     const existing: readonly unknown[] = Array.isArray(previous)
       ? previous
@@ -228,7 +225,6 @@ export class ChartRepository {
   /**
    * Write the repository to its `index.yaml`. Parent folders are created
    * when missing.
-   *
    * @returns This repository.
    */
   save(): ChartRepository {

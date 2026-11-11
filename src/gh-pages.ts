@@ -14,9 +14,8 @@ import { redactCredentials } from './utils/redact.js';
 /**
  * Check that gh-pages publishing can work: git is usable, the directory is a
  * repository, the remote exists and can be reached.
- *
- * @param context Logger, directory and runner.
- * @param remoteName Name of the remote the branch is pushed to.
+ * @param context - Logger, directory and runner.
+ * @param remoteName - Name of the remote the branch is pushed to.
  * @returns The remote, once it is known to be reachable.
  * @throws SemanticReleaseError (`ENOGIT`, `ENOTGITREPO`, `ENOREMOTE` or
  *   `EREMOTEACCESS`) for the first thing that is wrong.
@@ -61,8 +60,7 @@ export interface GhPagesPlan {
 /**
  * Remove the temporary working tree, best effort. It is used when something
  * fails after the plan was made, so the repository is left as it was found.
- *
- * @param plan The plan whose working tree to remove.
+ * @param plan - The plan whose working tree to remove.
  */
 export async function abandonGhPages(plan: GhPagesPlan): Promise<void> {
   await discardWorktree(plan.worktree);
@@ -70,8 +68,7 @@ export async function abandonGhPages(plan: GhPagesPlan): Promise<void> {
 
 /**
  * Remove a working tree and its directory, best effort.
- *
- * @param worktree The working tree.
+ * @param worktree - The working tree.
  */
 async function discardWorktree(worktree: Worktree): Promise<void> {
   await worktree.remove();
@@ -83,10 +80,9 @@ async function discardWorktree(worktree: Worktree): Promise<void> {
  * validate the existing chart repository. It runs before the OCI push so
  * that a refusal (a malformed index) cannot leave a release half published;
  * if the refusal happens, the working tree is removed again.
- *
- * @param context Logger, directory and runner for git.
- * @param settings The chart, remote and branch names, the configured public
- *   URL, and the repository URL semantic-release was configured with.
+ * @param context - Logger, directory and runner for git.
+ * @param settings - The chart, remote and branch names, the configured public
+ * URL, and the repository URL semantic-release was configured with.
  * @returns The plan used by the rest of the publish.
  * @throws SemanticReleaseError when the index is refused.
  */
@@ -143,11 +139,10 @@ export async function planGhPages(
 /**
  * Add the packaged charts to the chart repository, commit it on the gh-pages
  * branch, push, and remove the temporary working tree.
- *
- * @param context Logger for the progress messages.
- * @param plan The plan made before publishing.
- * @param settings The packages to add, the commit author, and the git tag of
- *   the release.
+ * @param context - Logger for the progress messages.
+ * @param plan - The plan made before publishing.
+ * @param settings - The packages to add, the commit author, and the git tag of
+ * the release.
  */
 export async function publishGhPages(
   context: CommandContext,

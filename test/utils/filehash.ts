@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
 
 /**
  * Computes the SHA-256 hex digest of a file's content.

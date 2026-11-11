@@ -8,7 +8,9 @@ export const VALUES_TABLE_TEMPLATE = '{{ template "chart.valuesTable" . }}';
 const VALUES_TABLE_START_RE = /<!--\s*render\.chart\.valuesTable\s*-->/i;
 const VALUES_TABLE_END_RE = /<!--\s*end\.chart\.valuesTable\s*-->/i;
 const VALUES_TABLE_BLOCK_RE = new RegExp(
-  VALUES_TABLE_START_RE.source + '[\\s\\S]*?' + VALUES_TABLE_END_RE.source,
+  VALUES_TABLE_START_RE.source +
+    String.raw`[\s\S]*?` +
+    VALUES_TABLE_END_RE.source,
   'gi',
 );
 
@@ -16,13 +18,13 @@ const VALUES_TABLE_BLOCK_RE = new RegExp(
  * Rewrites each valuesTable block to:
  *   <!-- render.chart.valuesTable -->
  *   {{ template "chart.valuesTable" . }}
- *   <!-- end.chart.valuesTable -->
+ *   <!-- end.chart.valuesTable -->.
  */
 export function normalizeReadmeValuesTableContent(content: string): {
   updated: string;
   changed: boolean;
 } {
-  const updated = content.replace(VALUES_TABLE_BLOCK_RE, (block) => {
+  const updated = content.replaceAll(VALUES_TABLE_BLOCK_RE, (block) => {
     const start =
       block.match(VALUES_TABLE_START_RE)?.[0] ??
       '<!-- render.chart.valuesTable -->';
