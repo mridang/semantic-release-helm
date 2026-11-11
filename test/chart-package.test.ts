@@ -1,6 +1,6 @@
-import * as crypto from 'node:crypto';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
 import { ChartPackage } from '../src/chart-package.js';
@@ -30,10 +30,10 @@ describe('ChartPackage', () => {
 
   it(
     'hashes the file content',
-    withTempDir((dir) => {
+    withTempDir(async (dir) => {
       const file = path.join(dir, 'app-1.0.0.tgz');
-      fs.writeFileSync(file, 'content');
-      expect(ChartPackage.at(file).digest()).toBe(
+      await fs.writeFile(file, 'content');
+      expect(await ChartPackage.at(file).digest()).toBe(
         crypto.createHash('sha256').update('content').digest('hex'),
       );
     }),
@@ -41,19 +41,20 @@ describe('ChartPackage', () => {
 
   it(
     'finds only the .tgz files of a directory',
-    withTempDir((dir) => {
-      fs.writeFileSync(path.join(dir, 'b-1.0.0.tgz'), 'b');
-      fs.writeFileSync(path.join(dir, 'a-1.0.0.tgz'), 'a');
-      fs.writeFileSync(path.join(dir, 'index.yaml'), 'x');
-      fs.mkdirSync(path.join(dir, 'b-2.0.0.tgz'));
-      expect(ChartPackage.find(dir).map((p) => p.fileName)).toEqual([
+    withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, 'b-1.0.0.tgz'), 'b');
+      await fs.writeFile(path.join(dir, 'a-1.0.0.tgz'), 'a');
+      await fs.writeFile(path.join(dir, 'index.yaml'), 'x');
+      await fs.mkdir(path.join(dir, 'b-2.0.0.tgz'));
+      const found = await ChartPackage.find(path.resolve(dir));
+      expect(found.map((p) => p.fileName)).toEqual([
         'a-1.0.0.tgz',
         'b-1.0.0.tgz',
       ]);
     }),
   );
 
-  it('finds nothing in a directory that does not exist', () => {
-    expect(ChartPackage.find('/nonexistent-dir-for-test')).toEqual([]);
+  it('finds nothing in a directory that does not exist', async () => {
+    expect(await ChartPackage.find('/nonexistent-dir-for-test')).toEqual([]);
   });
 });

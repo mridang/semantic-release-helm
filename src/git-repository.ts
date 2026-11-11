@@ -1,3 +1,6 @@
+/**
+ * @file Wraps the git operations the release needs, such as branches, tags and pushes.
+ */
 import SemanticReleaseError from '@semantic-release/error';
 import { runLogged, type CommandContext } from './command-runner.js';
 import { Remote, type Branch } from './remote.js';
@@ -13,7 +16,7 @@ export class GitRepository {
   private readonly context: CommandContext;
 
   /**
-   * @param context Logger, directory and runner.
+   * @param context - Logger, directory and runner.
    */
   private constructor(context: CommandContext) {
     this.context = context;
@@ -21,9 +24,8 @@ export class GitRepository {
 
   /**
    * Open the repository the context's directory is inside.
-   *
-   * @param context Logger, directory and runner.
-   * @returns The repository.
+   * @param context - Logger, directory and runner.
+   * @returns The repository wrapper for the working directory.
    * @throws SemanticReleaseError (`ENOGIT`) when git cannot be started, or
    *   (`ENOTGITREPO`) when the directory is not in a repository.
    */
@@ -52,14 +54,12 @@ export class GitRepository {
 
   /**
    * A configured remote.
-   *
-   * @param name Remote name.
-   * @returns The remote.
+   * @param name - The configured remote, such as origin.
+   * @returns The remote wrapper for that name.
    * @throws SemanticReleaseError (`ENOREMOTE`) when it is not configured.
    */
   async remote(name: string): Promise<Remote> {
-    const url = await this.git(['remote', 'get-url', name]).then(
-      (text): string | undefined => text,
+    const url = await this.git(['remote', 'get-url', name]).catch(
       (): string | undefined => undefined,
     );
     if (url === undefined) {
@@ -76,10 +76,9 @@ export class GitRepository {
    * Create a working tree for a branch. The given remote branch is preferred
    * when its remote-tracking ref exists, then an existing local branch, then
    * a fresh orphan branch.
-   *
-   * @param directory Path of the working tree to create.
-   * @param name Branch name.
-   * @param from The remote branch to start from, if any.
+   * @param directory - Path of the working tree to create.
+   * @param name - Branch name.
+   * @param from - The remote branch to start from, if any.
    * @returns The working tree.
    */
   async createWorktree(
@@ -87,18 +86,19 @@ export class GitRepository {
     name: string,
     from?: Branch,
   ): Promise<Worktree> {
-    if (from?.remote !== undefined) {
-      if (await this.hasRef(`refs/remotes/${from.remote}/${name}`)) {
-        await this.git([
-          'worktree',
-          'add',
-          directory,
-          '-B',
-          name,
-          `${from.remote}/${name}`,
-        ]);
-        return new Worktree({ ...this.context, directory, branch: { name } });
-      }
+    if (
+      from?.remote !== undefined &&
+      (await this.hasRef(`refs/remotes/${from.remote}/${name}`))
+    ) {
+      await this.git([
+        'worktree',
+        'add',
+        directory,
+        '-B',
+        name,
+        `${from.remote}/${name}`,
+      ]);
+      return new Worktree({ ...this.context, directory, branch: { name } });
     }
     if (await this.hasRef(`refs/heads/${name}`)) {
       await this.git(['worktree', 'add', directory, name]);
@@ -112,8 +112,7 @@ export class GitRepository {
 
   /**
    * Remove a working tree that may be left over from an earlier run.
-   *
-   * @param directory Path of the working tree.
+   * @param directory - Path of the working tree.
    * @returns True when git removed it, false when there was nothing to remove.
    */
   async removeWorktree(directory: string): Promise<boolean> {
@@ -126,8 +125,7 @@ export class GitRepository {
 
   /**
    * Whether a ref exists.
-   *
-   * @param ref Full ref name.
+   * @param ref - Full ref name.
    * @returns True when it does.
    */
   private async hasRef(ref: string): Promise<boolean> {
@@ -145,8 +143,7 @@ export class GitRepository {
 
   /**
    * Run git with logging.
-   *
-   * @param args Arguments after `git`.
+   * @param args - Arguments after `git`.
    * @returns The trimmed standard output.
    */
   private git(args: readonly string[]): Promise<string> {

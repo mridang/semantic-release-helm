@@ -12,8 +12,7 @@ export interface RecordedCall {
 /**
  * A runner that records its calls and answers from a function, so a client
  * can be tested without starting any program.
- *
- * @param answer Produces the stdout for a call, or throws to fail it.
+ * @param answer - Produces the stdout for a call, or throws to fail it.
  * @returns The runner and the list of calls it has received.
  */
 export function fakeRunner(answer: (call: RecordedCall) => string = () => ''): {
@@ -31,7 +30,6 @@ export function fakeRunner(answer: (call: RecordedCall) => string = () => ''): {
 
 /**
  * A logger that records everything written to it.
- *
  * @returns The logger and the lines it has received.
  */
 export function recordingLogger(): {

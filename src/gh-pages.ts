@@ -1,5 +1,8 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+/**
+ * @file Publishes packaged charts and index.yaml to the gh-pages branch through a worktree.
+ */
+import { mkdir, rm } from 'node:fs/promises';
+import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
 import type { Chart } from './chart.js';
 import type { ChartPackage } from './chart-package.js';
@@ -14,9 +17,8 @@ import { redactCredentials } from './utils/redact.js';
 /**
  * Check that gh-pages publishing can work: git is usable, the directory is a
  * repository, the remote exists and can be reached.
- *
- * @param context Logger, directory and runner.
- * @param remoteName Name of the remote the branch is pushed to.
+ * @param context - Logger, directory and runner.
+ * @param remoteName - Name of the remote the branch is pushed to.
  * @returns The remote, once it is known to be reachable.
  * @throws SemanticReleaseError (`ENOGIT`, `ENOTGITREPO`, `ENOREMOTE` or
  *   `EREMOTEACCESS`) for the first thing that is wrong.
@@ -61,8 +63,7 @@ export interface GhPagesPlan {
 /**
  * Remove the temporary working tree, best effort. It is used when something
  * fails after the plan was made, so the repository is left as it was found.
- *
- * @param plan The plan whose working tree to remove.
+ * @param plan - The plan whose working tree to remove.
  */
 export async function abandonGhPages(plan: GhPagesPlan): Promise<void> {
   await discardWorktree(plan.worktree);
@@ -70,12 +71,11 @@ export async function abandonGhPages(plan: GhPagesPlan): Promise<void> {
 
 /**
  * Remove a working tree and its directory, best effort.
- *
- * @param worktree The working tree.
+ * @param worktree - The working tree.
  */
 async function discardWorktree(worktree: Worktree): Promise<void> {
   await worktree.remove();
-  fs.rmSync(worktree.directory, { recursive: true, force: true });
+  await rm(worktree.directory, { recursive: true, force: true });
 }
 
 /**
@@ -83,10 +83,9 @@ async function discardWorktree(worktree: Worktree): Promise<void> {
  * validate the existing chart repository. It runs before the OCI push so
  * that a refusal (a malformed index) cannot leave a release half published;
  * if the refusal happens, the working tree is removed again.
- *
- * @param context Logger, directory and runner for git.
- * @param settings The chart, remote and branch names, the configured public
- *   URL, and the repository URL semantic-release was configured with.
+ * @param context - Logger, directory and runner for git.
+ * @param settings - The chart, remote and branch names, the configured public
+ * URL, and the repository URL semantic-release was configured with.
  * @returns The plan used by the rest of the publish.
  * @throws SemanticReleaseError when the index is refused.
  */
@@ -108,7 +107,7 @@ export async function planGhPages(
   if (!(await repository.removeWorktree(directory))) {
     context.logger.log('gh-pages cleanup: worktree not found (expected)');
   }
-  fs.rmSync(directory, { recursive: true, force: true });
+  await rm(directory, { recursive: true, force: true });
 
   const fetched = await remote.fetch(branch);
   if (fetched === undefined) {
@@ -121,7 +120,7 @@ export async function planGhPages(
     branch,
     fetched ?? { name: branch, remote: remote.name },
   );
-  fs.mkdirSync(directory, { recursive: true });
+  await mkdir(directory, { recursive: true });
 
   const configured = repositoryUrl ? RemoteUrl.parse(repositoryUrl) : undefined;
   const releaseBase = remote.url.releaseBase(configured);
@@ -133,7 +132,7 @@ export async function planGhPages(
   }
   const planned = { remote, worktree, chart, url, releaseBase };
   try {
-    return { ...planned, repository: ChartRepository.open(directory) };
+    return { ...planned, repository: await ChartRepository.open(directory) };
   } catch (error) {
     await discardWorktree(worktree);
     throw error;
@@ -143,11 +142,10 @@ export async function planGhPages(
 /**
  * Add the packaged charts to the chart repository, commit it on the gh-pages
  * branch, push, and remove the temporary working tree.
- *
- * @param context Logger for the progress messages.
- * @param plan The plan made before publishing.
- * @param settings The packages to add, the commit author, and the git tag of
- *   the release.
+ * @param context - Logger for the progress messages.
+ * @param plan - The plan made before publishing.
+ * @param settings - The packages to add, the commit author, and the git tag of
+ * the release.
  */
 export async function publishGhPages(
   context: CommandContext,
@@ -158,18 +156,16 @@ export async function publishGhPages(
     readonly tag: string | undefined;
   },
 ): Promise<void> {
-  const repository = settings.packages.reduce((current, pkg) => {
-    if (plan.url !== undefined) {
-      return current.add(plan.chart, pkg, plan.url);
-    }
-    if (plan.releaseBase === undefined) {
-      return current.add(plan.chart, pkg, '', { urls: [pkg.fileName] });
-    }
+  let repository = plan.repository;
+  for (const pkg of settings.packages) {
     const tag = settings.tag ?? `v${pkg.version}`;
     const link = `${plan.releaseBase}/releases/download/${tag}/${pkg.fileName}`;
-    return current.add(plan.chart, pkg, '', { urls: [link] });
-  }, plan.repository);
-  repository.save();
+    const urls = [plan.releaseBase === undefined ? pkg.fileName : link];
+    repository = await (plan.url === undefined
+      ? repository.add(plan.chart, pkg, '', { urls })
+      : repository.add(plan.chart, pkg, plan.url));
+  }
+  await repository.save();
 
   const commit = await plan.worktree.commit(
     'docs(charts): update Helm repo (merge index) [skip ci]',

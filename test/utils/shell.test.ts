@@ -5,7 +5,7 @@ import { quoteWord, shQuote } from '../../src/utils/shell.js';
 describe('shQuote', () => {
   it('single-quotes and escapes embedded single quotes', () => {
     expect(shQuote('a b')).toBe("'a b'");
-    expect(shQuote("a'b")).toBe("'a'\\''b'");
+    expect(shQuote("a'b")).toBe(String.raw`'a'\''b'`);
   });
 });
 
