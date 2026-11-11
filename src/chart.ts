@@ -1,7 +1,10 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+/**
+ * @file Reads, updates and templates a Helm chart's Chart.yaml and its README values table.
+ */
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
-import * as yaml from 'yaml';
+import yaml from 'yaml';
 import type { CommandContext } from './command-runner.js';
 import { ChartPackage } from './chart-package.js';
 import type { DockerImage } from './docker.js';
@@ -36,9 +39,8 @@ export interface ChartOptions extends CommandContext {
 /**
  * Parse Chart.yaml text, turning a YAML syntax problem into a coded error that
  * names the file.
- *
- * @param text Chart.yaml content.
- * @param file Path of the file, for the message.
+ * @param text - Chart.yaml content.
+ * @param file - Path of the file, for the message.
  * @returns The parsed value, whatever its shape.
  * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) when it does not parse.
  */
@@ -57,10 +59,9 @@ function parseChartYaml(text: string, file: string): unknown {
 /**
  * Read Chart.yaml text into its normalised fields: the name, version and
  * apiVersion as strings, every other key kept as it is.
- *
- * @param text Chart.yaml content.
- * @param file Path of the file, for messages.
- * @returns The fields.
+ * @param text - Chart.yaml content.
+ * @param file - Path of the file, for messages.
+ * @returns The typed Chart.yaml fields read from the document.
  */
 function readFields(text: string, file: string): ChartYaml {
   const parsed = parseChartYaml(text, file);
@@ -79,9 +80,8 @@ function readFields(text: string, file: string): ChartYaml {
 /**
  * Flatten nested objects into dotted keys with string values. Arrays and
  * other non-object values are not descended into; they are stringified.
- *
- * @param record The object to flatten.
- * @param prefix Dotted prefix for the keys, empty at the top level.
+ * @param record - The object to flatten.
+ * @param prefix - Dotted prefix for the keys, empty at the top level.
  * @returns A flat map such as `{ 'image.tag': 'v1' }`.
  */
 function flattenRecord(
@@ -90,7 +90,7 @@ function flattenRecord(
 ): Record<string, string> {
   return Object.fromEntries(
     Object.entries(record).flatMap(([key, value]) => {
-      const dotted = prefix.length ? `${prefix}.${key}` : key;
+      const dotted = prefix.length > 0 ? `${prefix}.${key}` : key;
       if (isRecord(value)) {
         return Object.entries(flattenRecord(value, dotted));
       }
@@ -102,8 +102,7 @@ function flattenRecord(
 /**
  * Turn template values into `helm template` arguments: one `--set` and one
  * `key=value` per flattened leaf.
- *
- * @param values The configured template values, if any.
+ * @param values - The configured template values, if any.
  * @returns Arguments to append to the command, empty when there are none.
  */
 export function templateSetArgs(
@@ -117,22 +116,20 @@ export function templateSetArgs(
 
 /**
  * Escape a string for use in a regular expression.
- *
- * @param text Literal text.
+ * @param text - Literal text.
  * @returns A pattern matching the text exactly.
  */
 function escapeForRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
 /**
  * The text to put where a blank value was (`version:`, `version: # note`,
  * `{version:}`): the scalar, with a space before it when the colon touches it
  * and a space after it when a comment follows.
- *
- * @param text The whole Chart.yaml text.
- * @param at Where the blank value is.
- * @param scalar The version as a YAML scalar.
+ * @param text - The whole Chart.yaml text.
+ * @param at - Where the blank value is.
+ * @param scalar - The version as a YAML scalar.
  * @returns The text to insert.
  */
 function blankValue(text: string, at: number, scalar: string): string {
@@ -143,9 +140,8 @@ function blankValue(text: string, at: number, scalar: string): string {
 
 /**
  * Render a version as a YAML scalar in the style of the one it replaces.
- *
- * @param version The new version.
- * @param style The style of the existing node.
+ * @param version - The new version.
+ * @param style - The style of the existing node.
  * @returns Source text for the scalar.
  */
 function versionScalar(version: string, style: string | undefined): string {
@@ -153,7 +149,7 @@ function versionScalar(version: string, style: string | undefined): string {
     return JSON.stringify(version);
   }
   if (style === 'QUOTE_SINGLE') {
-    return `'${version.replace(/'/g, "''")}'`;
+    return `'${version.replaceAll("'", "''")}'`;
   }
   return yaml.stringify(version, { lineWidth: 0 }).trimEnd();
 }
@@ -167,10 +163,9 @@ function versionScalar(version: string, style: string | undefined): string {
  * version is not a plain or quoted scalar, or when the version is shared
  * through a YAML anchor that something aliases (rewriting it would also change
  * the alias, for example appVersion).
- *
- * @param rawYaml Raw Chart.yaml content.
- * @param version Version string to set.
- * @param file Name of the file, used in error messages.
+ * @param rawYaml - Raw Chart.yaml content.
+ * @param version - Version string to set.
+ * @param file - Name of the file, used in error messages.
  * @returns Updated YAML string.
  * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) for any of the cases
  *   above and for YAML that does not parse; the message names the file.
@@ -220,7 +215,9 @@ export function setChartVersion(
   }
   if (
     existing.anchor &&
-    new RegExp(`\\*${escapeForRegExp(existing.anchor)}(?![\\w-])`).test(rawYaml)
+    new RegExp(String.raw`\*${escapeForRegExp(existing.anchor)}(?![\w-])`).test(
+      rawYaml,
+    )
   ) {
     throw refuse(
       `The version in ${file} is shared through a YAML anchor.`,
@@ -248,9 +245,9 @@ export class Chart {
   private readonly fields: ChartYaml;
 
   /**
-   * @param options Directory, images, logger, base directory and runner.
-   * @param text The Chart.yaml text.
-   * @param fields The parsed, normalised fields of the text.
+   * @param options - Directory, images, logger, base directory and runner.
+   * @param text - The Chart.yaml text.
+   * @param fields - The parsed, normalised fields of the text.
    */
   private constructor(options: ChartOptions, text: string, fields: ChartYaml) {
     this.options = options;
@@ -260,32 +257,34 @@ export class Chart {
 
   /**
    * Read the chart in `options.directory`.
-   *
-   * @param options Directory, images, logger, base directory and runner.
-   * @returns The chart.
+   * @param options - Directory, images, logger, base directory and runner.
+   * @returns The chart loaded from its Chart.yaml.
    * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) when Chart.yaml does
    *   not parse.
    */
-  static open(options: ChartOptions): Chart {
+  static async open(options: ChartOptions): Promise<Chart> {
     const file = Chart.fileOf(options);
-    const text = fs.readFileSync(file, 'utf8');
+    const text = await fs.readFile(file, 'utf8');
     return new Chart(options, text, readFields(text, file));
   }
 
   /**
    * Whether the directory holds a Chart.yaml.
-   *
-   * @param options Directory and base directory.
+   * @param options - Directory and base directory.
    * @returns True when the file exists.
    */
-  static exists(options: Pick<ChartOptions, 'directory' | 'cwd'>): boolean {
-    return fs.existsSync(Chart.fileOf(options));
+  static async exists(
+    options: Pick<ChartOptions, 'directory' | 'cwd'>,
+  ): Promise<boolean> {
+    return fs
+      .access(Chart.fileOf(options))
+      .then(() => true)
+      .catch(() => false);
   }
 
   /**
    * The full path of the chart's Chart.yaml.
-   *
-   * @param options Directory and base directory.
+   * @param options - Directory and base directory.
    * @returns The path.
    */
   private static fileOf(
@@ -296,7 +295,6 @@ export class Chart {
 
   /**
    * The chart name.
-   *
    * @returns The name, or an empty string when Chart.yaml has none.
    */
   name(): string {
@@ -305,7 +303,6 @@ export class Chart {
 
   /**
    * The chart version.
-   *
    * @returns The version, or undefined when Chart.yaml has none.
    */
   version(): string | undefined {
@@ -317,7 +314,6 @@ export class Chart {
 
   /**
    * The chart API version.
-   *
    * @returns The API version, or undefined when Chart.yaml has none.
    */
   apiVersion(): string | undefined {
@@ -329,7 +325,6 @@ export class Chart {
 
   /**
    * A copy of every field of Chart.yaml, for passing metadata on.
-   *
    * @returns The fields.
    */
   metadata(): Record<string, unknown> {
@@ -339,8 +334,7 @@ export class Chart {
   /**
    * The packages, from a list found on disk, that this chart produced:
    * those named `<name>-<version>.tgz`. Others are leftovers of earlier runs.
-   *
-   * @param found Packages found in the output directory.
+   * @param found - Packages found in the output directory.
    * @returns The packages of this chart, in the order given.
    */
   select(found: readonly ChartPackage[]): readonly ChartPackage[] {
@@ -352,8 +346,7 @@ export class Chart {
    * The chart with a different version. Only the version value of the text
    * changes (see `setChartVersion`); this chart is left as it was and nothing
    * is written until `save`.
-   *
-   * @param version The new version.
+   * @param version - The new version.
    * @returns The updated chart.
    * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) when the file cannot
    *   be edited safely.
@@ -366,17 +359,15 @@ export class Chart {
 
   /**
    * Write the chart's Chart.yaml.
-   *
    * @returns This chart.
    */
-  save(): Chart {
-    fs.writeFileSync(Chart.fileOf(this.options), this.text, 'utf8');
+  async save(): Promise<Chart> {
+    await fs.writeFile(Chart.fileOf(this.options), this.text, 'utf8');
     return this;
   }
 
   /**
    * Lint the chart with Helm.
-   *
    * @throws The error from Helm when the chart does not lint.
    */
   async lint(): Promise<void> {
@@ -386,8 +377,7 @@ export class Chart {
   /**
    * Render the chart, with values set from a nested object, to check that it
    * templates.
-   *
-   * @param values Values to set, flattened to `--set key=value`.
+   * @param values - Values to set, flattened to `--set key=value`.
    * @returns The rendered manifest.
    */
   async render(
@@ -404,16 +394,20 @@ export class Chart {
   /**
    * Regenerate the chart documentation with helm-docs. A failure is logged
    * and does not stop the release.
-   *
-   * @param args Extra arguments for helm-docs.
+   * @param args - Extra arguments for helm-docs.
    * @returns This chart.
    */
   async document(args: readonly string[]): Promise<Chart> {
     const { logger, cwd, docs, directory } = this.options;
     try {
       const readmePath = path.join(cwd, directory, 'README.md');
-      if (fs.existsSync(readmePath)) {
-        const { changed } = normalizeReadmeValuesTableFile(readmePath);
+      if (
+        await fs
+          .access(readmePath)
+          .then(() => true)
+          .catch(() => false)
+      ) {
+        const { changed } = await normalizeReadmeValuesTableFile(readmePath);
         if (changed) {
           logger.log('helm-docs: normalized README valuesTable block(s)');
         } else {
@@ -440,8 +434,7 @@ export class Chart {
 
   /**
    * Package the chart.
-   *
-   * @param destination Output directory, relative to the repository root.
+   * @param destination - Output directory, relative to the repository root.
    * @returns The package that Helm wrote.
    */
   async package(destination: string): Promise<ChartPackage> {

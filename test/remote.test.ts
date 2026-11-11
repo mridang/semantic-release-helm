@@ -1,4 +1,4 @@
-import * as path from 'node:path';
+import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
 import { Remote } from '../src/remote.js';
@@ -76,9 +76,9 @@ describe('Remote with real git', () => {
   it(
     'is reachable when the repository exists and not when it is missing',
     withTempDir(async (dir) => {
-      initRepo(dir);
+      await initRepo(dir);
       const bare = path.join(dir, 'bare.git');
-      git(dir, 'init', '--quiet', '--bare', bare);
+      await git(dir, 'init', '--quiet', '--bare', bare);
       const { logger } = recordingLogger();
       const make = (name: string) =>
         new Remote({
