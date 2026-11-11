@@ -11,7 +11,7 @@ import {
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { pathExists } from './utils/fs.js';
+import { copyDirectory, pathExists } from './utils/fs.js';
 import { execAsync, execFileAsync } from './utils/exec.js';
 import type { StartedTestContainer } from 'testcontainers';
 import { parse, stringify } from 'yaml';
@@ -66,8 +66,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       },
     };
 
-    // eslint-disable-next-line n/no-unsupported-features/node-builtins -- import.meta.dirname is flagged as experimental by the plugin; Node 22 (the engines floor) supports it and the preferred alternative is banned by unicorn/prefer-import-meta-properties
-    const testDir = import.meta.dirname;
+    const testDir = path.resolve(process.cwd(), 'test');
 
     let workdir: string;
     let chartPathInWorkdir: string;
@@ -106,8 +105,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       }
 
       await fs.mkdir(path.dirname(destChart), { recursive: true });
-      // eslint-disable-next-line n/no-unsupported-features/node-builtins -- fs.cp is experimental before Node 22.3.0, which the configured engines range allows
-      await fs.cp(srcChart, destChart, { recursive: true });
+      await copyDirectory(srcChart, destChart);
 
       chartPathInWorkdir = 'app';
     });

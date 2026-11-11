@@ -1,3 +1,5 @@
+import { anyUserinfoEnd, maskUserinfo } from './utils/redact.js';
+
 /**
  * A dotted host name or an IPv4 address. A scp-style remote whose host is
  * anything else (an `~/.ssh/config` alias such as `gh-work`, a Windows drive
@@ -158,7 +160,6 @@ export class RemoteUrl {
    * @returns The redacted text.
    */
   toString(): string {
-    // eslint-disable-next-line sonarjs/super-linear-regex -- the optional scheme prefix has no fixed start, and the redaction must keep its exact match semantics, which an equivalent hand-written scan would not guarantee
-    return this.raw.replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, '$1***@');
+    return maskUserinfo(this.raw, anyUserinfoEnd);
   }
 }
