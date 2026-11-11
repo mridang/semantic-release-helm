@@ -50,7 +50,7 @@ test('normalizeReadmeValuesTableFile returns false when no markers', async () =>
   const file = path.join(tmp, 'README.md');
   await fs.writeFile(file, '# nothing here\n', 'utf8');
 
-  const { changed } = normalizeReadmeValuesTableFile(file);
+  const { changed } = await normalizeReadmeValuesTableFile(file);
   expect(changed).toBe(false);
 });
 
@@ -65,7 +65,7 @@ test('normalizeReadmeValuesTableFile updates file in-place when markers exist', 
     'utf8',
   );
 
-  const { changed } = normalizeReadmeValuesTableFile(file);
+  const { changed } = await normalizeReadmeValuesTableFile(file);
   expect(changed).toBe(true);
 
   const after = await fs.readFile(file, 'utf8');

@@ -1,7 +1,7 @@
 /**
  * @file Maintains the Helm chart repository index.yaml that lists packaged chart versions.
  */
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import yaml from 'yaml';
 import type { Chart } from './chart.js';
@@ -143,7 +143,7 @@ export class ChartRepository {
    * @param rest - Every other member of the document, in order.
    * @example
    * ```ts
-   * const repo = ChartRepository.open('/repo/gh-pages');
+   * const repo = await ChartRepository.open('/repo/gh-pages');
    * ```
    */
   private constructor(
@@ -165,17 +165,19 @@ export class ChartRepository {
    * mapping, or its entries member is not a mapping.
    * @example
    * ```ts
-   * const repo = ChartRepository.open('/repo/gh-pages');
+   * const repo = await ChartRepository.open('/repo/gh-pages');
    * ```
    */
-  static open(directory: string): ChartRepository {
+  static async open(directory: string): Promise<ChartRepository> {
     const file = path.join(directory, 'index.yaml');
-    // eslint-disable-next-line n/no-sync -- ChartRepository.open and save are called synchronously by gh-pages.ts and test/gh-pages.test.ts, so async would ripple beyond this shard
-    if (!fs.existsSync(file)) {
+    const exists = await fs
+      .access(file)
+      .then(() => true)
+      .catch(() => false);
+    if (!exists) {
       return new ChartRepository(file, {}, {});
     }
-    // eslint-disable-next-line n/no-sync -- ChartRepository.open and save are called synchronously by gh-pages.ts and test/gh-pages.test.ts, so async would ripple beyond this shard
-    const parsed = parseIndex(fs.readFileSync(file, 'utf8'), file);
+    const parsed = parseIndex(await fs.readFile(file, 'utf8'), file);
     if (parsed === null || parsed === undefined) {
       return new ChartRepository(file, {}, {});
     }
@@ -214,16 +216,16 @@ export class ChartRepository {
    * list.
    * @example
    * ```ts
-   * const updated = ChartRepository.open('/repo/gh-pages').add(chart, pkg, 'https://charts.example.com');
+   * const updated = await (await ChartRepository.open('/repo/gh-pages')).add(chart, pkg, 'https://charts.example.com');
    * ```
    */
-  add(
+  async add(
     chart: Chart,
     pkg: ChartPackage,
     baseUrl: string,
     extra?: Readonly<Record<string, unknown>>,
-  ): ChartRepository {
-    const digest = pkg.digest();
+  ): Promise<ChartRepository> {
+    const digest = await pkg.digest();
     const filename = pkg.fileName;
     const created = new Date().toISOString();
 
@@ -277,14 +279,12 @@ export class ChartRepository {
    * @returns This repository.
    * @example
    * ```ts
-   * ChartRepository.open('/repo/gh-pages').save();
+   * await (await ChartRepository.open('/repo/gh-pages')).save();
    * ```
    */
-  save(): ChartRepository {
-    // eslint-disable-next-line n/no-sync -- ChartRepository.open and save are called synchronously by gh-pages.ts and test/gh-pages.test.ts, so async would ripple beyond this shard
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    // eslint-disable-next-line n/no-sync -- ChartRepository.open and save are called synchronously by gh-pages.ts and test/gh-pages.test.ts, so async would ripple beyond this shard
-    fs.writeFileSync(
+  async save(): Promise<ChartRepository> {
+    await fs.mkdir(path.dirname(this.file), { recursive: true });
+    await fs.writeFile(
       this.file,
       yaml.stringify(
         { apiVersion: 'v1', entries: this.entries, ...this.rest },

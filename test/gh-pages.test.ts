@@ -62,12 +62,12 @@ const author = { name: 'Bot', email: 'bot@example.test' };
 let noTag: string | undefined;
 
 /** The context, and the chart, for a scenario's repository. */
-function setup(repo: string) {
+async function setup(repo: string) {
   const { run } = fakeRunner();
   const { logger, lines } = recordingLogger();
   const image = new DockerImage({ image: 'unused', logger, cwd: repo, run });
   const context = { logger, cwd: repo };
-  const chart = Chart.open({
+  const chart = await Chart.open({
     directory: 'app',
     cwd: repo,
     logger,
@@ -91,7 +91,8 @@ describe('verifyGhPages', () => {
     'returns the remote when it can be reached',
     withTempDir(async (base) => {
       const s = await scenario(base);
-      const remote = await verifyGhPages(setup(s.repo).context, 'origin');
+      const { context } = await setup(s.repo);
+      const remote = await verifyGhPages(context, 'origin');
       expect(remote.name).toBe('origin');
     }),
   );
@@ -107,9 +108,10 @@ describe('verifyGhPages', () => {
         'origin',
         path.join(base, 'missing.git'),
       );
-      await expect(
-        verifyGhPages(setup(s.repo).context, 'origin'),
-      ).rejects.toMatchObject({ code: 'EREMOTEACCESS' });
+      const { context } = await setup(s.repo);
+      await expect(verifyGhPages(context, 'origin')).rejects.toMatchObject({
+        code: 'EREMOTEACCESS',
+      });
     }),
   );
 
@@ -117,9 +119,10 @@ describe('verifyGhPages', () => {
     'maps a missing remote to ENOREMOTE and a non-repository to ENOTGITREPO',
     withTempDir(async (base) => {
       const s = await scenario(base);
-      await expect(
-        verifyGhPages(setup(s.repo).context, 'nope'),
-      ).rejects.toMatchObject({ code: 'ENOREMOTE' });
+      const { context } = await setup(s.repo);
+      await expect(verifyGhPages(context, 'nope')).rejects.toMatchObject({
+        code: 'ENOREMOTE',
+      });
       const { logger } = recordingLogger();
       await expect(
         verifyGhPages({ logger, cwd: base }, 'origin'),
@@ -134,7 +137,7 @@ describe('planGhPages and publishGhPages', () => {
     withTempDir(async (base) => {
       const s = await scenario(base);
       await seedPages(s.repo, 'entries: []\n');
-      const { context, chart } = setup(s.repo);
+      const { context, chart } = await setup(s.repo);
       await expect(planGhPages(context, settings(chart))).rejects.toMatchObject(
         {
           code: 'EINVALIDINDEX',
@@ -147,13 +150,13 @@ describe('planGhPages and publishGhPages', () => {
     'publishes the index with release links from the repository URL and cleans up',
     withTempDir(async (base) => {
       const s = await scenario(base);
-      const { context, chart } = setup(s.repo);
+      const { context, chart } = await setup(s.repo);
       const plan = await planGhPages(
         context,
         settings(chart, 'https://github.com/o/r.git'),
       );
       await publishGhPages(context, plan, {
-        packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
+        packages: await ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
         tag: noTag,
       });
@@ -171,10 +174,10 @@ describe('planGhPages and publishGhPages', () => {
     'uses the bare file name when no link base can be trusted',
     withTempDir(async (base) => {
       const s = await scenario(base);
-      const { context, chart } = setup(s.repo);
+      const { context, chart } = await setup(s.repo);
       const plan = await planGhPages(context, settings(chart));
       await publishGhPages(context, plan, {
-        packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
+        packages: await ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
         tag: noTag,
       });
@@ -196,10 +199,10 @@ describe('planGhPages and publishGhPages', () => {
           entries: { app: [{ name: 'app', version: '0.9.0', urls: ['x'] }] },
         }),
       );
-      const { context, chart } = setup(s.repo);
+      const { context, chart } = await setup(s.repo);
       const plan = await planGhPages(context, settings(chart));
       await publishGhPages(context, plan, {
-        packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
+        packages: await ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
         tag: noTag,
       });
@@ -216,7 +219,7 @@ describe('planGhPages and publishGhPages', () => {
     'removes a leftover worktree from an earlier run',
     withTempDir(async (base) => {
       const s = await scenario(base);
-      const { context, chart } = setup(s.repo);
+      const { context, chart } = await setup(s.repo);
       await planGhPages(context, settings(chart));
       const second = await planGhPages(context, settings(chart));
       expect(second.worktree.directory).toBe(
@@ -229,13 +232,13 @@ describe('planGhPages and publishGhPages', () => {
     'uses the release tag it is given, not one derived from the file name',
     withTempDir(async (base) => {
       const s = await scenario(base);
-      const { context, chart } = setup(s.repo);
+      const { context, chart } = await setup(s.repo);
       const plan = await planGhPages(
         context,
         settings(chart, 'https://github.com/o/r.git'),
       );
       await publishGhPages(context, plan, {
-        packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
+        packages: await ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
         tag: 'release-1.0.0',
       });
@@ -252,7 +255,7 @@ describe('planGhPages and publishGhPages', () => {
     'writes absolute links from ghPages.url when it is set',
     withTempDir(async (base) => {
       const s = await scenario(base);
-      const { context, chart } = setup(s.repo);
+      const { context, chart } = await setup(s.repo);
       const plan = await planGhPages(
         context,
         settings(
@@ -262,7 +265,7 @@ describe('planGhPages and publishGhPages', () => {
         ),
       );
       await publishGhPages(context, plan, {
-        packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
+        packages: await ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
         tag: noTag,
       });
@@ -279,7 +282,7 @@ describe('planGhPages and publishGhPages', () => {
     'warns when release links cannot be built',
     withTempDir(async (base) => {
       const s = await scenario(base);
-      const { context, chart, lines } = setup(s.repo);
+      const { context, chart, lines } = await setup(s.repo);
       await planGhPages(context, settings(chart));
       expect(lines.some((l) => l.includes('cannot build release links'))).toBe(
         true,
@@ -292,7 +295,7 @@ describe('planGhPages and publishGhPages', () => {
     withTempDir(async (base) => {
       const s = await scenario(base);
       await seedPages(s.repo, 'entries: []\n');
-      const { context, chart } = setup(s.repo);
+      const { context, chart } = await setup(s.repo);
       await expect(planGhPages(context, settings(chart))).rejects.toThrow();
       expect(await pathExists(path.join(s.repo, '.gh-pages-tmp'))).toBe(false);
       expect(await git(s.repo, 'worktree', 'list')).not.toContain(
@@ -305,7 +308,7 @@ describe('planGhPages and publishGhPages', () => {
     'abandoning a plan removes the working tree',
     withTempDir(async (base) => {
       const s = await scenario(base);
-      const { context, chart } = setup(s.repo);
+      const { context, chart } = await setup(s.repo);
       const plan = await planGhPages(context, settings(chart));
       await abandonGhPages(plan);
       expect(await pathExists(path.join(s.repo, '.gh-pages-tmp'))).toBe(false);

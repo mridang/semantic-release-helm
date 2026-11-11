@@ -1,7 +1,7 @@
 /**
  * @file Reads, updates and templates a Helm chart's Chart.yaml and its README values table.
  */
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
 import yaml from 'yaml';
@@ -262,10 +262,9 @@ export class Chart {
    * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) when Chart.yaml does
    *   not parse.
    */
-  static open(options: ChartOptions): Chart {
+  static async open(options: ChartOptions): Promise<Chart> {
     const file = Chart.fileOf(options);
-    // eslint-disable-next-line n/no-sync -- Chart.open, exists and save are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
-    const text = fs.readFileSync(file, 'utf8');
+    const text = await fs.readFile(file, 'utf8');
     return new Chart(options, text, readFields(text, file));
   }
 
@@ -274,9 +273,13 @@ export class Chart {
    * @param options - Directory and base directory.
    * @returns True when the file exists.
    */
-  static exists(options: Pick<ChartOptions, 'directory' | 'cwd'>): boolean {
-    // eslint-disable-next-line n/no-sync -- Chart.open, exists and save are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
-    return fs.existsSync(Chart.fileOf(options));
+  static async exists(
+    options: Pick<ChartOptions, 'directory' | 'cwd'>,
+  ): Promise<boolean> {
+    return fs
+      .access(Chart.fileOf(options))
+      .then(() => true)
+      .catch(() => false);
   }
 
   /**
@@ -358,9 +361,8 @@ export class Chart {
    * Write the chart's Chart.yaml.
    * @returns This chart.
    */
-  save(): Chart {
-    // eslint-disable-next-line n/no-sync -- Chart.open, exists and save are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
-    fs.writeFileSync(Chart.fileOf(this.options), this.text, 'utf8');
+  async save(): Promise<Chart> {
+    await fs.writeFile(Chart.fileOf(this.options), this.text, 'utf8');
     return this;
   }
 
@@ -399,9 +401,13 @@ export class Chart {
     const { logger, cwd, docs, directory } = this.options;
     try {
       const readmePath = path.join(cwd, directory, 'README.md');
-      // eslint-disable-next-line n/no-sync -- Chart.open, exists and save are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
-      if (fs.existsSync(readmePath)) {
-        const { changed } = normalizeReadmeValuesTableFile(readmePath);
+      if (
+        await fs
+          .access(readmePath)
+          .then(() => true)
+          .catch(() => false)
+      ) {
+        const { changed } = await normalizeReadmeValuesTableFile(readmePath);
         if (changed) {
           logger.log('helm-docs: normalized README valuesTable block(s)');
         } else {

@@ -23,7 +23,7 @@ function setup(cwd: string, answer?: Parameters<typeof fakeRunner>[0]) {
 }
 
 /** A chart in a directory, with images that only record what they run. */
-function chartAt(dir: string): Chart {
+async function chartAt(dir: string): Promise<Chart> {
   return Chart.open({ ...setup(dir).options, directory: '' });
 }
 
@@ -67,7 +67,7 @@ describe('Chart', () => {
     'loads name and version',
     withTempDir(async (base: string) => {
       const chartDir = await writeChart(base, 'demo', '1.2.3');
-      const chart = chartAt(chartDir);
+      const chart = await chartAt(chartDir);
       expect({ name: chart.name(), version: chart.version() }).toEqual({
         name: 'demo',
         version: '1.2.3',
@@ -82,7 +82,7 @@ describe('Chart', () => {
   it(
     'creates new instance on version change',
     withTempDir(async (base: string) => {
-      const c1 = chartAt(await writeChart(base, 'demo', '1.0.0'));
+      const c1 = await chartAt(await writeChart(base, 'demo', '1.0.0'));
       const c2 = c1.withVersion('1.1.0');
       expect({ old: c1.version(), newer: c2.version() }).toEqual({
         old: '1.0.0',
@@ -104,7 +104,8 @@ describe('Chart', () => {
         'x-future': { ok: true },
       });
       const file = path.join(dir, 'Chart.yaml');
-      chartAt(dir).withVersion('0.2.0').save();
+      const opened = await chartAt(dir);
+      await opened.withVersion('0.2.0').save();
       expect(yaml.parse(await fs.readFile(file, 'utf8')) as ChartYaml).toEqual({
         apiVersion: 'v2',
         name: 'demo',
@@ -125,7 +126,8 @@ describe('Chart', () => {
     'writes valid YAML when saved',
     withTempDir(async (base: string) => {
       const dir = await writeChart(base, 'demo', '9.9.9');
-      chartAt(dir).save();
+      const opened = await chartAt(dir);
+      await opened.save();
       const text = await fs.readFile(path.join(dir, 'Chart.yaml'), 'utf8');
       expect(yaml.parse(text) as ChartYaml).toEqual({
         apiVersion: 'v2',
@@ -143,7 +145,9 @@ describe('Chart', () => {
   it(
     'returns shallow copy from raw',
     withTempDir(async (base: string) => {
-      const chart = chartAt(await writeChart(base, 'demo', '1.0.0', { a: 1 }));
+      const chart = await chartAt(
+        await writeChart(base, 'demo', '1.0.0', { a: 1 }),
+      );
       const r1 = chart.metadata();
       (r1 as Record<string, unknown>).a = 2;
       expect(chart.metadata()).toEqual({
@@ -168,7 +172,7 @@ describe('Chart.open with unusual Chart.yaml content', () => {
         'name: 7\nversion: 1.5\napiVersion: 2\n',
         'utf8',
       );
-      const chart = chartAt(dir);
+      const chart = await chartAt(dir);
       expect({
         name: chart.name(),
         version: chart.version(),
@@ -185,7 +189,7 @@ describe('Chart.open with unusual Chart.yaml content', () => {
       const dir = path.join(base, 'empty');
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(dir, 'Chart.yaml'), content, 'utf8');
-      const chart = chartAt(dir);
+      const chart = await chartAt(dir);
       expect({ name: chart.name() }).toEqual({ name: '' });
       expect(chart.version()).toBeUndefined();
       expect(chart.apiVersion()).toBeUndefined();
@@ -357,7 +361,7 @@ describe('Chart.open with invalid YAML', () => {
       const dir = path.join(base, 'bad');
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(dir, 'Chart.yaml'), 'a: 1\n---\nb: 2\n');
-      expect(() => chartAt(dir)).toThrow(
+      await expect(chartAt(dir)).rejects.toThrow(
         expect.objectContaining({
           code: 'EINVALIDCHARTYAML',
           details: expect.stringContaining('Chart.yaml'),
@@ -374,7 +378,7 @@ describe('Chart working with Helm', () => {
   ) => {
     await writeChart(base, 'app', '1.2.3');
     const s = setup(base, answer);
-    const chart = Chart.open({ ...s.options, directory: 'app' });
+    const chart = await Chart.open({ ...s.options, directory: 'app' });
     return { chart, ...s };
   };
 
@@ -432,7 +436,7 @@ describe('Chart working with Helm', () => {
       expect(
         await fs.readFile(path.join(base, 'app', 'Chart.yaml'), 'utf8'),
       ).toContain('1.2.3');
-      expect(next.save()).toBe(next);
+      expect(await next.save()).toBe(next);
       expect(
         await fs.readFile(path.join(base, 'app', 'Chart.yaml'), 'utf8'),
       ).toContain('2.0.0');
@@ -510,8 +514,10 @@ describe('Chart working with Helm', () => {
     'tells whether a chart exists',
     withTempDir(async (base) => {
       await writeChart(base, 'app', '1.0.0');
-      expect(Chart.exists({ cwd: base, directory: 'app' })).toBe(true);
-      expect(Chart.exists({ cwd: base, directory: 'missing' })).toBe(false);
+      expect(await Chart.exists({ cwd: base, directory: 'app' })).toBe(true);
+      expect(await Chart.exists({ cwd: base, directory: 'missing' })).toBe(
+        false,
+      );
     }),
   );
 });

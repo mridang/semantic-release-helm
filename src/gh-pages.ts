@@ -132,7 +132,7 @@ export async function planGhPages(
   }
   const planned = { remote, worktree, chart, url, releaseBase };
   try {
-    return { ...planned, repository: ChartRepository.open(directory) };
+    return { ...planned, repository: await ChartRepository.open(directory) };
   } catch (error) {
     await discardWorktree(worktree);
     throw error;
@@ -156,18 +156,16 @@ export async function publishGhPages(
     readonly tag: string | undefined;
   },
 ): Promise<void> {
-  const repository = settings.packages.reduce((current, pkg) => {
-    if (plan.url !== undefined) {
-      return current.add(plan.chart, pkg, plan.url);
-    }
-    if (plan.releaseBase === undefined) {
-      return current.add(plan.chart, pkg, '', { urls: [pkg.fileName] });
-    }
+  let repository = plan.repository;
+  for (const pkg of settings.packages) {
     const tag = settings.tag ?? `v${pkg.version}`;
     const link = `${plan.releaseBase}/releases/download/${tag}/${pkg.fileName}`;
-    return current.add(plan.chart, pkg, '', { urls: [link] });
-  }, plan.repository);
-  repository.save();
+    const urls = [plan.releaseBase === undefined ? pkg.fileName : link];
+    repository = await (plan.url === undefined
+      ? repository.add(plan.chart, pkg, '', { urls })
+      : repository.add(plan.chart, pkg, plan.url));
+  }
+  await repository.save();
 
   const commit = await plan.worktree.commit(
     'docs(charts): update Helm repo (merge index) [skip ci]',

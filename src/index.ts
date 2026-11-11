@@ -50,10 +50,10 @@ function imagesOf(
  * @param context - The step's logger and directory.
  * @returns The chart configured for this run.
  */
-function chartOf(
+async function chartOf(
   cfg: HelmConfig,
   context: { readonly logger: PublishContext['logger']; readonly cwd: string },
-): Chart {
+): Promise<Chart> {
   return Chart.open({
     ...context,
     directory: cfg.getChartPath(),
@@ -97,14 +97,15 @@ export async function verifyConditions(
   await images.docs.pull();
 
   const chartYamlPath = `${cwd}/${cfg.getChartPath()}/Chart.yaml`;
-  if (!Chart.exists({ cwd, directory: cfg.getChartPath() })) {
+  if (!(await Chart.exists({ cwd, directory: cfg.getChartPath() }))) {
     throw new SemanticReleaseError(
       'Chart.yaml not found.',
       'EMISSINGCHARTYAML',
       `No Chart.yaml found in ${cfg.getChartPath()}.`,
     );
   }
-  chartOf(cfg, here).withVersion('0.0.0');
+  const probe = await chartOf(cfg, here);
+  probe.withVersion('0.0.0');
   logger.log(`verifyConditions: found chart at ${chartYamlPath}`);
 
   if (cfg.isGhEnabled()) {
@@ -174,7 +175,7 @@ export async function prepare(
     );
   }
 
-  if (!Chart.exists({ cwd, directory: cfg.getChartPath() })) {
+  if (!(await Chart.exists({ cwd, directory: cfg.getChartPath() }))) {
     throw new SemanticReleaseError(
       'Chart.yaml missing during prepare.',
       'EMISSINGCHARTYAML',
@@ -182,7 +183,8 @@ export async function prepare(
     );
   }
 
-  const chart = chartOf(cfg, here).withVersion(version).save();
+  const current = await chartOf(cfg, here);
+  const chart = await current.withVersion(version).save();
   logger.log(`prepare: updated Chart.yaml to version ${version}`);
 
   await chart.lint();
@@ -275,7 +277,7 @@ export async function publish(
 
   logger.log('publish: starting');
 
-  const found = ChartPackage.find(`${cwd}/dist/charts`);
+  const found = await ChartPackage.find(`${cwd}/dist/charts`);
   if (found.length === 0) {
     throw new SemanticReleaseError(
       'No packaged chart found.',
@@ -284,7 +286,7 @@ export async function publish(
     );
   }
 
-  const chart = cfg.isGhEnabled() ? chartOf(cfg, here) : undefined;
+  const chart = cfg.isGhEnabled() ? await chartOf(cfg, here) : undefined;
   const packages = chart ? chart.select(found) : found;
   if (packages.length === 0) {
     throw new SemanticReleaseError(

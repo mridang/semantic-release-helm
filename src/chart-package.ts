@@ -2,7 +2,9 @@
  * @file Packages a Helm chart directory into a versioned .tgz archive and reports its digest.
  */
 import crypto from 'node:crypto';
-import fs from 'node:fs';
+import type { Dirent } from 'node:fs';
+import fs from 'node:fs/promises';
+import { isRecord } from './utils/object.js';
 import path from 'node:path';
 
 /**
@@ -70,18 +72,21 @@ export class ChartPackage {
    * @returns The `.tgz` files in it, as packages.
    * @example
    * ```ts
-   * const packages = ChartPackage.find('/repo/dist/charts');
+   * const packages = await ChartPackage.find('/repo/dist/charts');
    * packages.map((pkg) => pkg.fileName); // ['app-1.2.3.tgz']
    * ```
    */
-  static find(directory: string): readonly ChartPackage[] {
-    // eslint-disable-next-line n/no-sync -- ChartPackage.find and digest are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
-    if (!fs.existsSync(directory)) {
-      return [];
+  static async find(directory: string): Promise<readonly ChartPackage[]> {
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if (isRecord(error) && error.code === 'ENOENT') {
+        return [];
+      }
+      throw error;
     }
-    // eslint-disable-next-line n/no-sync -- ChartPackage.find and digest are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
-    return fs
-      .readdirSync(directory, { withFileTypes: true })
+    return entries
       .filter((entry) => entry.isFile() && entry.name.endsWith('.tgz'))
       .map((entry) => entry.name)
       .toSorted((a, b) => a.localeCompare(b))
@@ -139,16 +144,13 @@ export class ChartPackage {
    * @returns The digest as lowercase hex.
    * @example
    * ```ts
-   * const digest = ChartPackage.at('/repo/dist/charts/app-1.2.3.tgz').digest();
+   * const digest = await ChartPackage.at('/repo/dist/charts/app-1.2.3.tgz').digest();
    * ```
    */
-  digest(): string {
-    return (
-      crypto
-        .createHash('sha256')
-        // eslint-disable-next-line n/no-sync -- ChartPackage.find and digest are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
-        .update(fs.readFileSync(this.file))
-        .digest('hex')
-    );
+  async digest(): Promise<string> {
+    return crypto
+      .createHash('sha256')
+      .update(await fs.readFile(this.file))
+      .digest('hex');
   }
 }

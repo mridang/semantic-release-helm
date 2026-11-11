@@ -33,7 +33,7 @@ describe('ChartPackage', () => {
     withTempDir(async (dir) => {
       const file = path.join(dir, 'app-1.0.0.tgz');
       await fs.writeFile(file, 'content');
-      expect(ChartPackage.at(file).digest()).toBe(
+      expect(await ChartPackage.at(file).digest()).toBe(
         crypto.createHash('sha256').update('content').digest('hex'),
       );
     }),
@@ -46,13 +46,15 @@ describe('ChartPackage', () => {
       await fs.writeFile(path.join(dir, 'a-1.0.0.tgz'), 'a');
       await fs.writeFile(path.join(dir, 'index.yaml'), 'x');
       await fs.mkdir(path.join(dir, 'b-2.0.0.tgz'));
-      expect(
-        ChartPackage.find(path.resolve(dir)).map((p) => p.fileName),
-      ).toEqual(['a-1.0.0.tgz', 'b-1.0.0.tgz']);
+      const found = await ChartPackage.find(path.resolve(dir));
+      expect(found.map((p) => p.fileName)).toEqual([
+        'a-1.0.0.tgz',
+        'b-1.0.0.tgz',
+      ]);
     }),
   );
 
-  it('finds nothing in a directory that does not exist', () => {
-    expect(ChartPackage.find('/nonexistent-dir-for-test')).toEqual([]);
+  it('finds nothing in a directory that does not exist', async () => {
+    expect(await ChartPackage.find('/nonexistent-dir-for-test')).toEqual([]);
   });
 });
