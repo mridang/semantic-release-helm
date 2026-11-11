@@ -293,7 +293,9 @@ describe('ChartRepository', () => {
       });
     }),
   );
+});
 
+describe('ChartRepository metadata and persistence', () => {
   /**
    * Passes through metadata from Chart.yaml and coerces appVersion to string.
    * Ensures unknown keys are preserved unchanged.

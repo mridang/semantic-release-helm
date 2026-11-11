@@ -10,20 +10,20 @@ function captureConsole() {
   const errChunks: string[] = [];
 
   const out = new Writable({
-    write(chunk, _enc, cb) {
+    write(chunk, _enc, done) {
       outChunks.push(
         typeof chunk === 'string' ? chunk : chunk.toString('utf8'),
       );
-      cb();
+      done();
     },
   });
 
   const err = new Writable({
-    write(chunk, _enc, cb) {
+    write(chunk, _enc, done) {
       errChunks.push(
         typeof chunk === 'string' ? chunk : chunk.toString('utf8'),
       );
-      cb();
+      done();
     },
   });
 

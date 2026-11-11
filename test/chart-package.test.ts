@@ -51,10 +51,9 @@ describe('ChartPackage', () => {
       fs.writeFileSync(path.join(dir, 'index.yaml'), 'x');
       // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.mkdirSync(path.join(dir, 'b-2.0.0.tgz'));
-      expect(ChartPackage.find(dir).map((p) => p.fileName)).toEqual([
-        'a-1.0.0.tgz',
-        'b-1.0.0.tgz',
-      ]);
+      expect(
+        ChartPackage.find(path.resolve(dir)).map((p) => p.fileName),
+      ).toEqual(['a-1.0.0.tgz', 'b-1.0.0.tgz']);
     }),
   );
 

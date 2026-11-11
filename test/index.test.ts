@@ -54,6 +54,7 @@ const dockerAvailable = ((): boolean => {
 
 (dockerAvailable ? describe : describe.skip)(
   'semantic-release-helm (integration, real Docker + local git)',
+  // eslint-disable-next-line sonarjs/max-lines-per-function -- the nested specs share one Docker registry container and workdir set up in beforeAll, so splitting would duplicate that setup
   () => {
     let registry: StartedTestContainer | null = null;
     let registryPort = 0;
