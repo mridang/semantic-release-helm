@@ -1,5 +1,8 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+/**
+ * @file Publishes packaged charts and index.yaml to the gh-pages branch through a worktree.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
 import type { Chart } from './chart.js';
 import type { ChartPackage } from './chart-package.js';

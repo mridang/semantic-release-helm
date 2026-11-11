@@ -1,3 +1,6 @@
+/**
+ * @file Promise wrapper around child_process.execFile that reports failures as ExecError.
+ */
 import { execFile } from 'node:child_process';
 import { codeOf, messageOf, signalOf, statusOf } from './error.js';
 import { isRecord } from './object.js';
@@ -35,6 +38,17 @@ export type Runner = (
 ) => Promise<string>;
 
 /**
+ * The code, exit status, signal and captured output of a failed command.
+ */
+interface ExecErrorDetails {
+  readonly code: string | undefined;
+  readonly status: number | undefined;
+  readonly signal: string | undefined;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+/**
  * The error raised when a command cannot be started or exits unsuccessfully.
  * It carries the same shape in every plugin: `code` (a system error such as
  * `ENOENT`), `status` (the exit code), `signal`, and the captured output.
@@ -57,19 +71,21 @@ export class ExecError extends Error {
   readonly stderr: string;
 
   /**
+   * Create the error from its message and the details of the failed command.
    * @param message - Description of the failure, already free of credentials.
    * @param details - The code, exit status, signal and captured output.
+   * @example
+   * ```ts
+   * const error = new ExecError('git exited with status 128', {
+   *   code: undefined,
+   *   status: 128,
+   *   signal: undefined,
+   *   stdout: '',
+   *   stderr: 'fatal: not a git repository',
+   * });
+   * ```
    */
-  constructor(
-    message: string,
-    details: {
-      readonly code: string | undefined;
-      readonly status: number | undefined;
-      readonly signal: string | undefined;
-      readonly stdout: string;
-      readonly stderr: string;
-    },
-  ) {
+  constructor(message: string, details: ExecErrorDetails) {
     super(message);
     this.name = 'ExecError';
     this.code = details.code;
@@ -81,17 +97,19 @@ export class ExecError extends Error {
 }
 
 /**
- * Run a program without a shell. Arguments are passed as an array, so nothing
- * in them is interpreted; the environment is the current one plus
- * `options.env`. The standard input is always closed, after `options.input`
- * has been written, so a command never waits for input.
+ * Run a program without a shell. Arguments are passed as an array, so nothing in them is
+ * interpreted; the environment is the current one plus options.env. The standard input is always
+ * closed, after options.input has been written, so a command never waits for input.
  * @param file - Program to run.
  * @param args - Its arguments.
- * @param options - Working directory, extra environment, input, timeout and
- * output limit.
+ * @param options - Working directory, extra environment, input, timeout and output limit.
  * @returns The standard output as a string.
- * @throws ExecError when the program cannot be started, fails or times out;
- *   its message and output have credentials redacted.
+ * @rejects ExecError when the program cannot be started, fails or times out; its message and
+ * output have credentials redacted.
+ * @example
+ * ```ts
+ * const branch = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: '/repo' });
+ * ```
  */
 export const run: Runner = (file, args, options = {}) =>
   new Promise((resolve, reject) => {
@@ -105,6 +123,8 @@ export const run: Runner = (file, args, options = {}) =>
         timeout: options.timeout,
         encoding: 'utf8',
       },
+      // promisify does not expose the child handle, which stdin input needs.
+      // eslint-disable-next-line promise/prefer-await-to-callbacks -- execFile needs its callback and child handle for stdin
       (error, stdout, stderr) => {
         if (error === null) {
           resolve(stdout);

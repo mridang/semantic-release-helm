@@ -1,3 +1,6 @@
+/**
+ * @file Pushes packaged Helm charts to an OCI registry.
+ */
 import type { ChartPackage } from './chart-package.js';
 import type { DockerImage } from './docker.js';
 import { quoteWord, shQuote } from './utils/shell.js';

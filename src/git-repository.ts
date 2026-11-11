@@ -1,3 +1,6 @@
+/**
+ * @file Wraps the git operations the release needs, such as branches, tags and pushes.
+ */
 import SemanticReleaseError from '@semantic-release/error';
 import { runLogged, type CommandContext } from './command-runner.js';
 import { Remote, type Branch } from './remote.js';
@@ -22,7 +25,7 @@ export class GitRepository {
   /**
    * Open the repository the context's directory is inside.
    * @param context - Logger, directory and runner.
-   * @returns The repository.
+   * @returns The repository wrapper for the working directory.
    * @throws SemanticReleaseError (`ENOGIT`) when git cannot be started, or
    *   (`ENOTGITREPO`) when the directory is not in a repository.
    */
@@ -51,8 +54,8 @@ export class GitRepository {
 
   /**
    * A configured remote.
-   * @param name - Remote name.
-   * @returns The remote.
+   * @param name - The configured remote, such as origin.
+   * @returns The remote wrapper for that name.
    * @throws SemanticReleaseError (`ENOREMOTE`) when it is not configured.
    */
   async remote(name: string): Promise<Remote> {

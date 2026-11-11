@@ -1,4 +1,7 @@
-import * as fs from 'node:fs';
+/**
+ * @file Entry point that wires semantic-release lifecycle hooks to chart linting, packaging and publishing.
+ */
+import fs from 'node:fs';
 import SemanticReleaseError from '@semantic-release/error';
 import type {
   PrepareContext,
@@ -45,7 +48,7 @@ function imagesOf(
  * Open the configured chart.
  * @param cfg - Plugin configuration.
  * @param context - The step's logger and directory.
- * @returns The chart.
+ * @returns The chart configured for this run.
  */
 function chartOf(
   cfg: HelmConfig,

@@ -75,7 +75,7 @@ export class RemoteUrl {
    * Wrap the text of a remote URL, such as the output of
    * `git remote get-url`.
    * @param text - A remote URL: https, http, ssh, git, scp-style or a path.
-   * @returns The remote URL.
+   * @returns The URL as it was written, without credentials.
    */
   static parse(text: string): RemoteUrl {
     return new RemoteUrl(text);

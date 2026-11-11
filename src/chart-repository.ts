@@ -1,6 +1,9 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as yaml from 'yaml';
+/**
+ * @file Maintains the Helm chart repository index.yaml that lists packaged chart versions.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import yaml from 'yaml';
 import type { Chart } from './chart.js';
 import type { ChartPackage } from './chart-package.js';
 import SemanticReleaseError from '@semantic-release/error';
@@ -31,11 +34,15 @@ const RESERVED_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Collect all non-reserved Chart.yaml keys for an index entry. A small
- * denylist prevents overwriting fields computed by the index writer.
- * AppVersion is coerced to string when scalar..
- * @param raw - Parsed Chart.yaml map.
- * @returns The passthrough fields.
+ * Collect the Chart.yaml keys that are copied into an index entry as they are. Reserved keys
+ * are dropped, and an appVersion given as a number is stored as a string.
+ * @param raw - The parsed Chart.yaml mapping.
+ * @returns The keys to copy into the entry.
+ * @example
+ * ```ts
+ * passthroughAllExceptReserved({ name: 'app', home: 'https://example.com', appVersion: 2 });
+ * // { home: 'https://example.com', appVersion: '2' }
+ * ```
  */
 function passthroughAllExceptReserved(
   raw: Readonly<Record<string, unknown>>,
@@ -52,12 +59,15 @@ function passthroughAllExceptReserved(
 }
 
 /**
- * Parse index.yaml text, turning a YAML syntax problem into a coded error
- * that names the file.
- * @param text - Index.yaml content.
+ * Parse index.yaml text, turning a YAML syntax problem into a coded error that names the file.
+ * @param text - The index.yaml content.
  * @param file - Path of the file, for the message.
  * @returns The parsed value, whatever its shape.
  * @throws SemanticReleaseError (`EINVALIDINDEX`) when it does not parse.
+ * @example
+ * ```ts
+ * parseIndex('apiVersion: v1\nentries: {}\n', '/repo/gh-pages/index.yaml');
+ * ```
  */
 function parseIndex(text: string, file: string): unknown {
   try {
@@ -72,10 +82,15 @@ function parseIndex(text: string, file: string): unknown {
 }
 
 /**
- * The members of a document other than the named ones, in their order.
+ * The members of a document other than the named ones, in their original order.
  * @param doc - The document.
  * @param omit - Keys to leave out.
  * @returns The remaining members.
+ * @example
+ * ```ts
+ * without({ apiVersion: 'v1', entries: {}, generated: 'now' }, ['apiVersion', 'entries']);
+ * // { generated: 'now' }
+ * ```
  */
 function without(
   doc: Readonly<Record<string, unknown>>,
@@ -99,9 +114,14 @@ export class ChartRepository {
   private readonly rest: Readonly<Record<string, unknown>>;
 
   /**
+   * Create a repository from its parsed parts. Use ChartRepository.open to load one from disk.
    * @param file - Path of the index.yaml this repository is saved to.
    * @param entries - The chart entries, kept as loaded.
    * @param rest - Every other member of the document, in order.
+   * @example
+   * ```ts
+   * const repo = ChartRepository.open('/repo/gh-pages');
+   * ```
    */
   private constructor(
     file: string,
@@ -114,13 +134,16 @@ export class ChartRepository {
   }
 
   /**
-   * Open the repository index in a directory: the existing `index.yaml`, or
-   * an empty repository when there is none. An absent or null `entries` means
-   * empty.
-   * @param directory - Directory that holds (or will hold) `index.yaml`.
-   * @returns The repository.
-   * @throws SemanticReleaseError (`EINVALIDINDEX`) when the file is not valid
-   *   YAML, is not a mapping, or its `entries` is not a mapping.
+   * Open the repository index in a directory: the existing index.yaml, or an empty repository when
+   * there is none. An absent or null entries member means empty.
+   * @param directory - Directory that holds, or will hold, index.yaml.
+   * @returns The repository loaded from the index, or an empty one.
+   * @throws SemanticReleaseError (`EINVALIDINDEX`) when the file is not valid YAML, is not a
+   * mapping, or its entries member is not a mapping.
+   * @example
+   * ```ts
+   * const repo = ChartRepository.open('/repo/gh-pages');
+   * ```
    */
   static open(directory: string): ChartRepository {
     const file = path.join(directory, 'index.yaml');
@@ -154,18 +177,20 @@ export class ChartRepository {
   }
 
   /**
-   * Add a packaged chart to the repository. The entry includes fields
-   * computed here and all non-reserved Chart.yaml fields. Extra fields are
-   * merged last. An existing entry with the same version is replaced rather
-   * than duplicated.
+   * Add a packaged chart to the repository. The entry holds the fields computed here and every
+   * non-reserved Chart.yaml field, with extra fields merged last. An existing entry with the same
+   * version is replaced rather than duplicated.
    * @param chart - The chart that was packaged.
    * @param pkg - Its package.
-   * @param baseUrl - Base URL for absolute URLs. When blank, the file name is
-   * used as a relative URL.
+   * @param baseUrl - Base URL for absolute URLs. When blank, the file name is used as a relative URL.
    * @param extra - Optional extra fields to merge into the entry.
    * @returns The repository with the chart added.
-   * @throws SemanticReleaseError (`EINVALIDINDEX`) when the existing entry
-   *   for this chart is not a list.
+   * @throws SemanticReleaseError (`EINVALIDINDEX`) when the existing entry for this chart is not a
+   * list.
+   * @example
+   * ```ts
+   * const updated = ChartRepository.open('/repo/gh-pages').add(chart, pkg, 'https://charts.example.com');
+   * ```
    */
   add(
     chart: Chart,
@@ -223,9 +248,12 @@ export class ChartRepository {
   }
 
   /**
-   * Write the repository to its `index.yaml`. Parent folders are created
-   * when missing.
+   * Write the repository to its index.yaml, creating parent folders when they are missing.
    * @returns This repository.
+   * @example
+   * ```ts
+   * ChartRepository.open('/repo/gh-pages').save();
+   * ```
    */
   save(): ChartRepository {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });

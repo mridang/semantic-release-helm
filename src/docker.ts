@@ -1,3 +1,6 @@
+/**
+ * @file Builds docker run arguments and executes tooling commands inside containers.
+ */
 import SemanticReleaseError from '@semantic-release/error';
 import {
   redactError,
@@ -203,7 +206,7 @@ export class DockerImage {
 
   /**
    * The image reference, including the tag.
-   * @returns The reference.
+   * @returns The image reference, as passed to docker.
    */
   get reference(): string {
     return this.options.image;

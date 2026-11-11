@@ -1,3 +1,6 @@
+/**
+ * @file Reads the message, code, status and signal from unknown thrown values.
+ */
 import { isRecord, stringAt } from './object.js';
 
 /**

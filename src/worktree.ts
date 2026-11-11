@@ -1,3 +1,6 @@
+/**
+ * @file Creates and manages temporary git worktrees and the commits made inside them.
+ */
 import { runLogged, type CommandContext } from './command-runner.js';
 import type { Branch } from './remote.js';
 import { statusOf } from './utils/error.js';
@@ -69,7 +72,7 @@ export class Worktree {
   /**
    * The branch checked out here, with this directory attached so a push runs
    * from the right place.
-   * @returns The branch.
+   * @returns The branch checked out in the worktree.
    */
   get branch(): Branch {
     return { ...this.options.branch, directory: this.options.directory };
@@ -99,7 +102,7 @@ export class Worktree {
   /**
    * Stage everything and commit it. Whether anything is staged is decided
    * from git's exit status, not from the wording of any message.
-   * @param message - Commit message.
+   * @param message - The message recorded on the new commit.
    * @param author - Author name and email.
    * @returns The commit, or undefined when there was nothing to commit.
    */

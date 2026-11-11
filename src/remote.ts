@@ -1,3 +1,6 @@
+/**
+ * @file Queries and updates git remotes and branches for the release.
+ */
 import { runLogged, type CommandContext } from './command-runner.js';
 import { run as execRun } from './utils/exec.js';
 import type { RemoteUrl } from './remote-url.js';
@@ -41,7 +44,7 @@ export class Remote {
 
   /**
    * The name of the remote, such as `origin`.
-   * @returns The name.
+   * @returns The remote's name, such as origin.
    */
   get name(): string {
     return this.options.name;
@@ -49,7 +52,7 @@ export class Remote {
 
   /**
    * The address of the remote.
-   * @returns The remote URL.
+   * @returns The URL the remote points at.
    */
   get url(): RemoteUrl {
     return this.options.url;

@@ -1,7 +1,10 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+/**
+ * @file Reads, updates and templates a Helm chart's Chart.yaml and its README values table.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
-import * as yaml from 'yaml';
+import yaml from 'yaml';
 import type { CommandContext } from './command-runner.js';
 import { ChartPackage } from './chart-package.js';
 import type { DockerImage } from './docker.js';
@@ -58,7 +61,7 @@ function parseChartYaml(text: string, file: string): unknown {
  * apiVersion as strings, every other key kept as it is.
  * @param text - Chart.yaml content.
  * @param file - Path of the file, for messages.
- * @returns The fields.
+ * @returns The typed Chart.yaml fields read from the document.
  */
 function readFields(text: string, file: string): ChartYaml {
   const parsed = parseChartYaml(text, file);
@@ -255,7 +258,7 @@ export class Chart {
   /**
    * Read the chart in `options.directory`.
    * @param options - Directory, images, logger, base directory and runner.
-   * @returns The chart.
+   * @returns The chart loaded from its Chart.yaml.
    * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) when Chart.yaml does
    *   not parse.
    */

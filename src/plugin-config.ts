@@ -1,3 +1,6 @@
+/**
+ * @file Parses and validates the plugin configuration supplied to semantic-release.
+ */
 // noinspection JSUnusedGlobalSymbols
 export interface HelmPluginConfig {
   /**
