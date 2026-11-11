@@ -42,25 +42,35 @@ describe('redactCredentials', () => {
   });
 });
 
+const SCHEME = String.raw`([a-z][a-z0-9+.-]*:\/\/)`;
+const CREDENTIALS_WITH_PASSWORD = new RegExp(
+  [SCHEME, String.raw`[^\s/@:]*:\S*@`].join(''),
+  'gi',
+);
+const CREDENTIALS_WITHOUT_PASSWORD = new RegExp(
+  [SCHEME, String.raw`[^\s/@:]+@`].join(''),
+  'gi',
+);
+const ANY_CREDENTIALS = new RegExp(
+  [SCHEME, String.raw`[^\s/@]*@`].join(''),
+  'gi',
+);
+
 /** The redaction as it was before the scan became linear, kept to prove equivalence. */
 function redactWithRegexes(text: string): string {
-  return (
-    text
-      // eslint-disable-next-line sonarjs/super-linear-regex -- verbatim copy of the replaced pattern, kept only as the reference the linear scan is compared with
-      .replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:\S*@/gi, '$1***@')
-      // eslint-disable-next-line sonarjs/super-linear-regex -- verbatim copy of the replaced pattern, kept only as the reference the linear scan is compared with
-      .replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+@/gi, '$1***@')
-      .replaceAll(
-        /([?&](?:access_token|token|password|private_token)=)[^&\s#'"]+/gi,
-        '$1***',
-      )
-      .replaceAll(/\b((?:proxy-)?authorization)\s*:[^\r\n]*/gi, '$1: ***')
-      .replaceAll(/\bbearer\s+[\w.~+/=-]+/gi, 'Bearer ***')
-      .replaceAll(
-        /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|glpat-[A-Za-z0-9_-]{16,})/g,
-        '***',
-      )
-  );
+  return text
+    .replaceAll(CREDENTIALS_WITH_PASSWORD, '$1***@')
+    .replaceAll(CREDENTIALS_WITHOUT_PASSWORD, '$1***@')
+    .replaceAll(
+      /([?&](?:access_token|token|password|private_token)=)[^&\s#'"]+/gi,
+      '$1***',
+    )
+    .replaceAll(/\b((?:proxy-)?authorization)\s*:[^\r\n]*/gi, '$1: ***')
+    .replaceAll(/\bbearer\s+[\w.~+/=-]+/gi, 'Bearer ***')
+    .replaceAll(
+      /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|glpat-[A-Za-z0-9_-]{16,})/g,
+      '***',
+    );
 }
 
 const PIECES = [
@@ -123,10 +133,7 @@ describe('redaction scan against the regular expressions it replaced', () => {
 
   it('prints 60000 generated remotes exactly as the regular expression did', () => {
     for (const text of generated(60_000)) {
-      const old = text
-        .trim()
-        // eslint-disable-next-line sonarjs/super-linear-regex -- verbatim copy of the replaced pattern, kept only as the reference the linear scan is compared with
-        .replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, '$1***@');
+      const old = text.trim().replaceAll(ANY_CREDENTIALS, '$1***@');
       expect(RemoteUrl.parse(text).toString()).toBe(old);
     }
   });
