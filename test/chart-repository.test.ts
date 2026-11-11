@@ -630,9 +630,7 @@ describe('ChartRepository YAML handling', () => {
         pkg,
         `https://u.test/charts${'/'.repeat(200_000)}`,
       );
-      const index = (await readIndex(idxPath)) as {
-        entries: Record<string, { urls: string[] }[]>;
-      };
+      const index = await readIndex(idxPath);
       expect(index.entries.slashy?.[0]?.urls).toEqual([
         `https://u.test/charts/${pkg.fileName}`,
       ]);
