@@ -14,9 +14,9 @@
 export function redactCredentials(text: string): string {
   return (
     text
-      // eslint-disable-next-line sonarjs/super-linear-regex -- the userinfo may hold @ and /, and the input is one short log or error line
+      // eslint-disable-next-line sonarjs/super-linear-regex -- the scheme prefix has no fixed start and the password may hold @ and /, so no regex form is linear; a hand-written scanner would risk leaking credentials this backstop must redact
       .replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:\S*@/gi, '$1***@')
-      // eslint-disable-next-line sonarjs/super-linear-regex -- the userinfo may hold @ and /, and the input is one short log or error line
+      // eslint-disable-next-line sonarjs/super-linear-regex -- the scheme prefix has no fixed start and the password may hold @ and /, so no regex form is linear; a hand-written scanner would risk leaking credentials this backstop must redact
       .replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+@/gi, '$1***@')
       .replaceAll(
         /([?&](?:access_token|token|password|private_token)=)[^&\s#'"]+/gi,

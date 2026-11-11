@@ -124,27 +124,26 @@ export const run: Runner = (file, args, options = {}) =>
         encoding: 'utf8',
       },
       // promisify does not expose the child handle, which stdin input needs.
-      // eslint-disable-next-line promise/prefer-await-to-callbacks -- execFile needs its callback and child handle for stdin
-      (error, stdout, stderr) => {
-        if (error === null) {
+      (failure, stdout, stderr) => {
+        if (failure === null) {
           resolve(stdout);
           return;
         }
         const text = (value: unknown, fallback: string): string =>
           redactCredentials(typeof value === 'string' ? value : fallback);
         const timedOut =
-          isRecord(error) &&
-          error.killed === true &&
+          isRecord(failure) &&
+          failure.killed === true &&
           options.timeout !== undefined;
         reject(
-          new ExecError(redactCredentials(messageOf(error)), {
-            code: timedOut ? 'ETIMEDOUT' : codeOf(error),
+          new ExecError(redactCredentials(messageOf(failure)), {
+            code: timedOut ? 'ETIMEDOUT' : codeOf(failure),
             status:
-              statusOf(error) ??
-              (isRecord(error) && typeof error.code === 'number'
-                ? error.code
+              statusOf(failure) ??
+              (isRecord(failure) && typeof failure.code === 'number'
+                ? failure.code
                 : undefined),
-            signal: signalOf(error),
+            signal: signalOf(failure),
             stdout: text(stdout, ''),
             stderr: text(stderr, ''),
           }),

@@ -11,6 +11,29 @@ import { messageOf } from './utils/error.js';
 import { isRecord } from './utils/object.js';
 
 /**
+ * Remove trailing slashes, and leading ones too when asked. Equivalent to the
+ * `/\/+$/` and `/^\/+|\/+$/g` replacements, but a single linear pass.
+ * @param text - Text that may start or end with slashes.
+ * @param leading - Whether leading slashes are removed as well.
+ * @returns The text without the slashes.
+ * @example
+ * ```ts
+ * trimSlashes('/a/b//', true); // 'a/b'
+ * ```
+ */
+function trimSlashes(text: string, leading: boolean): string {
+  let start = 0;
+  let end = text.length;
+  while (leading && start < end && text.charAt(start) === '/') {
+    start += 1;
+  }
+  while (end > start && text.charAt(end - 1) === '/') {
+    end -= 1;
+  }
+  return text.slice(start, end);
+}
+
+/**
  * Entry schema for a single chart version inside an index. The type
  * is intentionally permissive to remain forward compatible with new
  * Helm metadata. Tests rely on the version field being present.
@@ -206,10 +229,7 @@ export class ChartRepository {
 
     const urls =
       baseUrl.trim().length > 0
-        ? [
-            // eslint-disable-next-line sonarjs/super-linear-regex -- the base URL is one short configured value, so the trailing slash scan stays small
-            `${baseUrl.replace(/\/+$/, '')}/${filename}`,
-          ]
+        ? [`${trimSlashes(baseUrl, false)}/${filename}`]
         : [filename];
 
     const entry: ChartEntry = {

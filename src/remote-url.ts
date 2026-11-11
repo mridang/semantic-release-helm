@@ -7,6 +7,29 @@ const WEB_HOST =
   /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i;
 
 /**
+ * Remove trailing slashes, and leading ones too when asked. Equivalent to the
+ * `/\/+$/` and `/^\/+|\/+$/g` replacements, but a single linear pass.
+ * @param text - Text that may start or end with slashes.
+ * @param leading - Whether leading slashes are removed as well.
+ * @returns The text without the slashes.
+ * @example
+ * ```ts
+ * trimSlashes('/a/b//', true); // 'a/b'
+ * ```
+ */
+function trimSlashes(text: string, leading: boolean): string {
+  let start = 0;
+  let end = text.length;
+  while (leading && start < end && text.charAt(start) === '/') {
+    start += 1;
+  }
+  while (end > start && text.charAt(end - 1) === '/') {
+    end -= 1;
+  }
+  return text.slice(start, end);
+}
+
+/**
  * The parts of a remote that a web link is built from.
  */
 interface WebParts {
@@ -98,10 +121,7 @@ export class RemoteUrl {
     if (!parts) {
       return undefined;
     }
-    const repoPath = parts.pathname
-      // eslint-disable-next-line sonarjs/super-linear-regex -- a repository path is one short URL segment run, so the trailing slash scan stays small
-      .replaceAll(/^\/+|\/+$/g, '')
-      .replace(/\.git$/, '');
+    const repoPath = trimSlashes(parts.pathname, true).replace(/\.git$/, '');
     if (repoPath.length === 0) {
       return undefined;
     }
@@ -138,7 +158,7 @@ export class RemoteUrl {
    * @returns The redacted text.
    */
   toString(): string {
-    // eslint-disable-next-line sonarjs/super-linear-regex -- the userinfo is one short remote URL token, so the scan stays small
+    // eslint-disable-next-line sonarjs/super-linear-regex -- the optional scheme prefix has no fixed start, and the redaction must keep its exact match semantics, which an equivalent hand-written scan would not guarantee
     return this.raw.replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, '$1***@');
   }
 }

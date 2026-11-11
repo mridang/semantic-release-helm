@@ -36,6 +36,10 @@ describe('RemoteUrl.webBase', () => {
     ],
     ['https://user@ghe.example.test/o/r.git/', 'https://ghe.example.test/o/r'],
     ['git@ghe.example.test:o/r.git\n', 'https://ghe.example.test/o/r'],
+    ['https://github.com/o/r///', 'https://github.com/o/r'],
+    ['https://github.com///o/r.git/', 'https://github.com/o/r'],
+    [`https://github.com/o/r${'/'.repeat(200_000)}`, 'https://github.com/o/r'],
+    [`https://github.com${'/'.repeat(200_000)}o/r`, 'https://github.com/o/r'],
   ])('maps %s', (remote, expected) => {
     expect(base(remote)).toBe(expected);
   });

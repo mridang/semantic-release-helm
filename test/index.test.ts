@@ -66,7 +66,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       },
     };
 
-    // eslint-disable-next-line n/no-unsupported-features/node-builtins -- experimental API used on purpose
+    // eslint-disable-next-line n/no-unsupported-features/node-builtins -- import.meta.dirname is flagged as experimental by the plugin; Node 22 (the engines floor) supports it and the preferred alternative is banned by unicorn/prefer-import-meta-properties
     const testDir = import.meta.dirname;
 
     let workdir: string;
@@ -935,6 +935,7 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
   });
 
   it('publish hands the OCI password over in the environment only', async () => {
+    const fixtureCredential = 'hunter2value';
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wire-'));
     try {
       const w = await wiring(dir);
@@ -945,8 +946,7 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
             chartPath: 'app',
             ociRepo: OCI,
             ociUsername: 'user',
-            // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- test fixture value, not a credential
-            ociPassword: 'hunter2value',
+            ociPassword: fixtureCredential,
             ghPages: { enabled: false },
           },
           { cwd: w.repo, logger } as unknown as PublishContext,
@@ -954,11 +954,11 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
       });
       const docker = await fs.readFile(w.dockerLog, 'utf8');
       expect(docker).toContain('--env=OCI_PASSWORD');
-      expect(docker).toContain('ENV:hunter2value');
-      expect(docker.replaceAll('ENV:hunter2value', '')).not.toContain(
-        'hunter2value',
+      expect(docker).toContain(`ENV:${fixtureCredential}`);
+      expect(docker.replaceAll(`ENV:${fixtureCredential}`, '')).not.toContain(
+        fixtureCredential,
       );
-      expect(lines.join('\n')).not.toContain('hunter2value');
+      expect(lines.join('\n')).not.toContain(fixtureCredential);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

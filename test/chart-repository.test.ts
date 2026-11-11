@@ -149,6 +149,28 @@ describe('ChartRepository', () => {
   );
 
   /**
+   * Trailing slashes on the base URL never reach the entry URL, however many.
+   */
+  it(
+    'strips every trailing slash from the base URL',
+    withTempDir(async (base: string) => {
+      const idxPath = path.join(base, 'charts', 'index.yaml');
+      const chart = chartAt(await writeChartYaml(base, 'slashy', '1.0.0'));
+      const tgz = await writeTgz(base, 'slashy', '1.0.0', 'a');
+      const pkg = ChartPackage.at(tgz);
+      ChartRepository.open(path.dirname(idxPath))
+        .add(chart, pkg, `https://u.test/charts${'/'.repeat(200_000)}`)
+        .save();
+      const index = (await readIndex(idxPath)) as {
+        entries: Record<string, { urls: string[] }[]>;
+      };
+      expect(index.entries.slashy?.[0]?.urls).toEqual([
+        `https://u.test/charts/${pkg.fileName}`,
+      ]);
+    }),
+  );
+
+  /**
    * Replaces an existing version rather than duplicating it. Ensures digest
    * and urls reflect the latest artifact for that version.
    */

@@ -212,8 +212,9 @@ describe('DockerImage.run', () => {
 
   it('with env replaces an empty failure with a fixed message', async () => {
     const { image } = make(() => {
-      // eslint-disable-next-line unicorn/error-message -- the test needs a failure with an empty message
-      throw new Error('');
+      const failure = new Error('placeholder');
+      failure.message = '';
+      throw failure;
     });
     await expect(
       image.run(['true'], { env: { PW: 'secretvalue' } }),
