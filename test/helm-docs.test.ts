@@ -1,7 +1,7 @@
 import { expect } from '@jest/globals';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   normalizeReadmeValuesTableContent,
   normalizeReadmeValuesTableFile,
@@ -46,8 +46,10 @@ test('normalizeReadmeValuesTableContent handles multiple blocks and odd spacing'
 });
 
 test('normalizeReadmeValuesTableFile returns false when no markers', () => {
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'helm-docs-no-markers-'));
   const file = path.join(tmp, 'README.md');
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
   fs.writeFileSync(file, '# nothing here\n', 'utf8');
 
   const { changed } = normalizeReadmeValuesTableFile(file);
@@ -55,8 +57,10 @@ test('normalizeReadmeValuesTableFile returns false when no markers', () => {
 });
 
 test('normalizeReadmeValuesTableFile updates file in-place when markers exist', () => {
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'helm-docs-with-markers-'));
   const file = path.join(tmp, 'README.md');
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
   fs.writeFileSync(
     file,
     '<!-- render.chart.valuesTable -->\nsome table\n<!-- end.chart.valuesTable -->\n',
@@ -66,6 +70,7 @@ test('normalizeReadmeValuesTableFile updates file in-place when markers exist', 
   const { changed } = normalizeReadmeValuesTableFile(file);
   expect(changed).toBe(true);
 
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
   const after = fs.readFileSync(file, 'utf8');
   expect(after).toContain(VALUES_TABLE_TEMPLATE);
 });

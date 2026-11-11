@@ -1,5 +1,5 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
 import { Worktree } from '../src/worktree.js';
@@ -27,7 +27,7 @@ describe('Worktree with real git', () => {
     'lists changes, including untracked files',
     withTempDir(async (dir) => {
       initRepo(dir);
-      fs.writeFileSync(path.join(dir, 'a.txt'), 'a');
+      await writeFile(path.join(dir, 'a.txt'), 'a');
       const { worktree } = real(dir);
       expect(await worktree.changes()).toEqual([
         { status: '??', path: 'a.txt' },
@@ -49,7 +49,7 @@ describe('Worktree with real git', () => {
     'stages everything and returns the commit, with the author and message intact',
     withTempDir(async (dir) => {
       initRepo(dir);
-      fs.writeFileSync(path.join(dir, 'a.txt'), 'a');
+      await writeFile(path.join(dir, 'a.txt'), 'a');
       const { worktree } = real(dir);
       const commit = await worktree.commit('docs: a message [skip ci]', author);
       expect(commit).toEqual({
@@ -67,7 +67,7 @@ describe('Worktree with real git', () => {
     withTempDir(async (dir) => {
       initRepo(dir);
       git(dir, 'checkout', '--orphan', 'pages');
-      fs.writeFileSync(path.join(dir, 'index.yaml'), 'x');
+      await writeFile(path.join(dir, 'index.yaml'), 'x');
       const commit = await real(dir).worktree.commit('m', author);
       expect(commit?.message).toBe('m');
     }),

@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
  * @returns The standard output.
  */
 export function git(cwd: string, ...args: string[]): string {
+  // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git synchronously from PATH on purpose
   return execFileSync('git', args, { cwd, encoding: 'utf8' });
 }
 

@@ -29,10 +29,10 @@ export function normalizeReadmeValuesTableContent(content: string): {
 } {
   const updated = content.replaceAll(VALUES_TABLE_BLOCK_RE, (block) => {
     const start =
-      block.match(VALUES_TABLE_START_RE)?.[0] ??
+      VALUES_TABLE_START_RE.exec(block)?.[0] ??
       '<!-- render.chart.valuesTable -->';
     const end =
-      block.match(VALUES_TABLE_END_RE)?.[0] ?? '<!-- end.chart.valuesTable -->';
+      VALUES_TABLE_END_RE.exec(block)?.[0] ?? '<!-- end.chart.valuesTable -->';
     return `${start}\n${VALUES_TABLE_TEMPLATE}\n${end}`;
   });
   return { updated, changed: content.search(VALUES_TABLE_BLOCK_RE) !== -1 };
@@ -44,9 +44,12 @@ export function normalizeReadmeValuesTableContent(content: string): {
 export function normalizeReadmeValuesTableFile(absPath: string): {
   changed: boolean;
 } {
+  // eslint-disable-next-line n/no-sync -- normalizeReadmeValuesTableFile is called synchronously by test/helm-docs.test.ts outside this shard, so async would ripple there
   if (!fs.existsSync(absPath)) return { changed: false };
+  // eslint-disable-next-line n/no-sync -- normalizeReadmeValuesTableFile is called synchronously by test/helm-docs.test.ts outside this shard, so async would ripple there
   const original = fs.readFileSync(absPath, 'utf8');
   const { updated, changed } = normalizeReadmeValuesTableContent(original);
+  // eslint-disable-next-line n/no-sync -- normalizeReadmeValuesTableFile is called synchronously by test/helm-docs.test.ts outside this shard, so async would ripple there
   if (changed) fs.writeFileSync(absPath, updated, 'utf8');
   return { changed };
 }

@@ -1,6 +1,6 @@
-import * as crypto from 'node:crypto';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
 import { ChartPackage } from '../src/chart-package.js';
@@ -32,6 +32,7 @@ describe('ChartPackage', () => {
     'hashes the file content',
     withTempDir((dir) => {
       const file = path.join(dir, 'app-1.0.0.tgz');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(file, 'content');
       expect(ChartPackage.at(file).digest()).toBe(
         crypto.createHash('sha256').update('content').digest('hex'),
@@ -42,9 +43,13 @@ describe('ChartPackage', () => {
   it(
     'finds only the .tgz files of a directory',
     withTempDir((dir) => {
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(path.join(dir, 'b-1.0.0.tgz'), 'b');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(path.join(dir, 'a-1.0.0.tgz'), 'a');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(path.join(dir, 'index.yaml'), 'x');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.mkdirSync(path.join(dir, 'b-2.0.0.tgz'));
       expect(ChartPackage.find(dir).map((p) => p.fileName)).toEqual([
         'a-1.0.0.tgz',

@@ -2,6 +2,9 @@ import { describe, it, expect } from '@jest/globals';
 import { HelmConfig, HelmPluginConfig } from '../src/plugin-config.js';
 import { withEnv } from './utils/withenv.js';
 
+/** An unset value, declared without a literal `undefined` so it can be passed explicitly. */
+let absent: undefined;
+
 describe('HelmConfig', () => {
   it('defaults: only chartPath provided', () => {
     const cfg = new HelmConfig({ chartPath: 'charts/app' } as HelmPluginConfig);
@@ -36,19 +39,12 @@ describe('HelmConfig', () => {
       docsArgs: ['--template-files=README.md'],
       gh: {
         enabled: true,
-        url: undefined,
         repo: 'origin',
         branch: 'gh-pages',
       },
       oci: {
         enabled: false,
-        repo: undefined,
         insecure: false,
-        host: undefined,
-        port: undefined,
-        hostPort: undefined,
-        username: undefined,
-        password: undefined,
         hasUser: false,
         hasPass: false,
       },
@@ -116,7 +112,6 @@ describe('HelmConfig', () => {
       repo: 'oci://ghcr.io/my-org/helm',
       insecure: false,
       host: 'ghcr.io',
-      port: undefined,
       hostPort: 'ghcr.io',
     });
   });
@@ -151,7 +146,9 @@ describe('HelmConfig', () => {
       insecure: true,
     });
   });
+});
 
+describe('HelmConfig', () => {
   it('creds: prefer config-provided username/password', () => {
     const cfg = new HelmConfig({
       chartPath: 'x',
@@ -195,7 +192,7 @@ describe('HelmConfig', () => {
   });
 
   it('creds: absent env yields undefined and false flags', () => {
-    withEnv({ OCI_USERNAME: undefined, OCI_PASSWORD: undefined }, () => {
+    withEnv({ OCI_USERNAME: absent, OCI_PASSWORD: absent }, () => {
       const cfg = new HelmConfig({
         chartPath: 'x',
         ociRepo: 'oci://ghcr.io/x/y',
@@ -207,8 +204,6 @@ describe('HelmConfig', () => {
         hasUser: cfg.hasOciUser(),
         hasPass: cfg.hasOciPass(),
       }).toEqual({
-        user: undefined,
-        pass: undefined,
         hasUser: false,
         hasPass: false,
       });
@@ -261,15 +256,12 @@ describe('HelmConfig with null values from a JSON or YAML config file', () => {
       ociRepo: cfg.getOciRepo(),
       ghUrl: cfg.getGhUrl(),
     }).toEqual({
-      templateValues: undefined,
       ociEnabled: false,
       ociInsecure: false,
       docsArgs: ['--template-files=README.md'],
       helmImage: 'alpine/helm:3.15.2',
       docsImage: 'jnorwood/helm-docs:v1.14.2',
       gh: [true, 'origin', 'gh-pages'],
-      ociRepo: undefined,
-      ghUrl: undefined,
     });
   });
 

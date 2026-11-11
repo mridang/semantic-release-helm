@@ -8,12 +8,12 @@ import {
   beforeEach,
   afterEach,
 } from '@jest/globals';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
 import type { StartedTestContainer } from 'testcontainers';
-import * as yaml from 'yaml';
+import { parse, stringify } from 'yaml';
 
 // noinspection ES6PreferShortImport
 import { verifyConditions, prepare, publish } from '../src/index.js';
@@ -29,6 +29,7 @@ const DOCS_IMAGE = process.env.DOCS_IMAGE ?? 'jnorwood/helm-docs:v1.14.2';
 
 function requireDocker(): void {
   try {
+    // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
     execSync('docker version', { stdio: 'pipe' });
   } catch {
     throw new Error('Docker is required to run these tests.');
@@ -36,12 +37,14 @@ function requireDocker(): void {
 }
 
 function pull(image: string): void {
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
   execSync(`docker pull ${image}`, { stdio: 'pipe' });
 }
 
 /** Whether a Docker daemon answers; the integration suite needs one. */
 const dockerAvailable = ((): boolean => {
   try {
+    // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
     execSync('docker info', { stdio: 'pipe' });
     return true;
   } catch {
@@ -64,8 +67,8 @@ const dockerAvailable = ((): boolean => {
       },
     };
 
-    const __filename = import.meta.filename;
-    const __dirname = import.meta.dirname;
+    // eslint-disable-next-line n/no-unsupported-features/node-builtins -- experimental API used on purpose
+    const testDir = import.meta.dirname;
 
     let workdir: string;
     let chartPathInWorkdir: string;
@@ -91,24 +94,30 @@ const dockerAvailable = ((): boolean => {
     });
 
     beforeEach(() => {
-      workdir = path.join(__dirname, `.it-${Date.now()}`);
+      workdir = path.join(testDir, `.it-${Date.now()}`);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.mkdirSync(workdir, { recursive: true });
 
-      const srcChart = path.join(__dirname, 'chart');
+      const srcChart = path.join(testDir, 'chart');
       const destChart = path.join(workdir, 'app');
 
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       if (!fs.existsSync(srcChart)) {
-        const here = fs.readdirSync(__dirname).join(', ');
+        // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
+        const here = fs.readdirSync(testDir).join(', ');
         throw new Error(`Missing test chart at ${srcChart}. dir: ${here}`);
       }
 
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.mkdirSync(path.dirname(destChart), { recursive: true });
+      // eslint-disable-next-line n/no-sync, n/no-unsupported-features/node-builtins -- sync test helper, experimental API used on purpose
       fs.cpSync(srcChart, destChart, { recursive: true });
 
       chartPathInWorkdir = 'app';
     });
 
     afterEach(() => {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.rmSync(workdir, { recursive: true, force: true });
     });
 
@@ -145,6 +154,7 @@ const dockerAvailable = ((): boolean => {
 
       await expect(prepare(cfg, ctx)).resolves.toBeUndefined();
 
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       const chartYaml = fs.readFileSync(
         path.join(workdir, 'app', 'Chart.yaml'),
         'utf8',
@@ -152,6 +162,7 @@ const dockerAvailable = ((): boolean => {
       expect(chartYaml).toMatch(/version:\s*0\.2\.0/);
 
       const dist = path.join(workdir, 'dist', 'charts');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       const files = fs.existsSync(dist) ? fs.readdirSync(dist) : [];
 
       expect(files.some((f) => f.endsWith('.tgz'))).toBe(true);
@@ -188,6 +199,7 @@ const dockerAvailable = ((): boolean => {
       await expect(publish(pubCfg, pubCtx)).resolves.toBeUndefined();
 
       const dist = path.join(workdir, 'dist', 'charts');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       const files = fs.readdirSync(dist);
       expect(files.some((f) => f.endsWith('.tgz'))).toBe(true);
     }, 240_000);
@@ -224,20 +236,29 @@ const dockerAvailable = ((): boolean => {
       await expect(publish(pubCfg, pubCtx)).resolves.toBeUndefined();
 
       const dist = path.join(workdir, 'dist', 'charts');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       const files = fs.readdirSync(dist);
       expect(files.some((f) => f.endsWith('.tgz'))).toBe(true);
     }, 240_000);
 
     it('publish writes charts to gh-pages with a merged, correct index.yaml (fresh repo)', async () => {
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git init -b main', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git config user.email "ci@example.com"', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git config user.name "CI Tester"', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git add .', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git commit -m "init repo for gh-pages test"', { cwd: workdir });
 
       const remoteDir = path.join(workdir, '.remote.git');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git init --bare "${remoteDir}"`);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git remote add origin "${remoteDir}"`, { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git push -u origin main', { cwd: workdir });
 
       const prepCfg: HelmPluginConfig = {
@@ -267,27 +288,34 @@ const dockerAvailable = ((): boolean => {
 
       await expect(publish(pubCfg, pubCtx)).resolves.toBeUndefined();
 
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       const branches = execSync('git branch --list', {
         cwd: workdir,
       }).toString('utf8');
       expect(branches).toMatch(/gh-pages/);
 
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       const lsRemote = execSync('git ls-remote --heads origin gh-pages', {
         cwd: workdir,
       }).toString('utf8');
       expect(lsRemote).toMatch(/refs\/heads\/gh-pages/);
 
       const checkDir = path.join(workdir, '.check-gh-pages');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.mkdirSync(checkDir, { recursive: true });
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
 
       const chartsDir = path.join(checkDir);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       expect(fs.existsSync(chartsDir)).toBe(true);
 
       const indexPath = path.join(chartsDir, 'index.yaml');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       expect(fs.existsSync(indexPath)).toBe(true);
 
-      const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
+      const parsed = parse(fs.readFileSync(indexPath, 'utf8')) as {
         apiVersion: string;
         entries: Record<string, Array<Record<string, unknown>>>;
       };
@@ -311,17 +339,25 @@ const dockerAvailable = ((): boolean => {
     }, 240_000);
 
     it('publish merges index.yaml across releases (sorted desc by version)', async () => {
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git init -b main', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git config user.email "ci@example.com"', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git config user.name "CI Tester"', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git add .', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git commit -m "init repo for gh-pages merge test"', {
         cwd: workdir,
       });
 
       const remoteDir = path.join(workdir, '.remote.git');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git init --bare "${remoteDir}"`);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git remote add origin "${remoteDir}"`, { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git push -u origin main', { cwd: workdir });
 
       const baseCfg: Pick<
@@ -360,11 +396,14 @@ const dockerAvailable = ((): boolean => {
       );
 
       const checkDir = path.join(workdir, '.check-gh-pages-merge');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.mkdirSync(checkDir, { recursive: true });
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
 
       const indexPath = path.join(checkDir, 'index.yaml');
-      const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
+      const parsed = parse(fs.readFileSync(indexPath, 'utf8')) as {
         apiVersion: string;
         entries: Record<string, Array<{ version: string }>>;
       };
@@ -386,17 +425,25 @@ const dockerAvailable = ((): boolean => {
     }, 300_000);
 
     it('publish (both) pushes to OCI and also updates gh-pages with base URL', async () => {
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git init -b main', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git config user.email "ci@example.com"', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git config user.name "CI Tester"', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git add .', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git commit -m "init repo for both publish test"', {
         cwd: workdir,
       });
 
       const remoteDir = path.join(workdir, '.remote.git');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git init --bare "${remoteDir}"`);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git remote add origin "${remoteDir}"`, { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git push -u origin main', { cwd: workdir });
 
       await prepare(
@@ -434,11 +481,14 @@ const dockerAvailable = ((): boolean => {
       ).resolves.toBeUndefined();
 
       const checkDir = path.join(workdir, '.check-both');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.mkdirSync(checkDir, { recursive: true });
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
       const indexPath = path.join(checkDir, 'index.yaml');
 
-      const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
+      const parsed = parse(fs.readFileSync(indexPath, 'utf8')) as {
         apiVersion: string;
         entries: Record<string, Array<Record<string, unknown>>>;
       };
@@ -455,17 +505,25 @@ const dockerAvailable = ((): boolean => {
     }, 300_000);
 
     it('publish writes relative URLs when ghPages.url is omitted', async () => {
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git init -b main', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git config user.email "ci@example.com"', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git config user.name "CI Tester"', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git add .', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git commit -m "init repo for relative URL test"', {
         cwd: workdir,
       });
 
       const remoteDir = path.join(workdir, '.remote.git');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git init --bare "${remoteDir}"`);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git remote add origin "${remoteDir}"`, { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git push -u origin main', { cwd: workdir });
 
       await prepare(
@@ -493,11 +551,14 @@ const dockerAvailable = ((): boolean => {
       );
 
       const checkDir = path.join(workdir, '.check-relative');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.mkdirSync(checkDir, { recursive: true });
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
       const indexPath = path.join(checkDir, 'index.yaml');
 
-      const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
+      const parsed = parse(fs.readFileSync(indexPath, 'utf8')) as {
         apiVersion: string;
         entries: Record<string, Array<{ urls: string[] }>>;
       };
@@ -507,27 +568,39 @@ const dockerAvailable = ((): boolean => {
     }, 240_000);
 
     it('publish preserves other chart names already present in index.yaml', async () => {
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git init -b main', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git config user.email "ci@example.com"', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git config user.name "CI Tester"', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git add .', { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git commit -m "init repo for preservation test"', {
         cwd: workdir,
       });
 
       const remoteDir = path.join(workdir, '.remote.git');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git init --bare "${remoteDir}"`);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git remote add origin "${remoteDir}"`, { cwd: workdir });
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       execSync('git push -u origin main', { cwd: workdir });
 
       const tmpWorktree = path.join(workdir, '.gh-pages-seed');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git worktree add --detach "${tmpWorktree}"`, { cwd: workdir });
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git -C "${tmpWorktree}" switch --orphan gh-pages`);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git -C "${tmpWorktree}" reset --hard`);
 
       const chartsDir = path.join(tmpWorktree);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.mkdirSync(chartsDir, { recursive: true });
-      const seedIndex = yaml.stringify({
+      const seedIndex = stringify({
         apiVersion: 'v1',
         entries: {
           other: [
@@ -542,12 +615,17 @@ const dockerAvailable = ((): boolean => {
           ],
         },
       });
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.writeFileSync(path.join(chartsDir, 'index.yaml'), seedIndex, 'utf8');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git -C "${tmpWorktree}" add .`);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(
         `git -C "${tmpWorktree}" commit -m "seed gh-pages with other chart"`,
       );
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git -C "${tmpWorktree}" push origin gh-pages`);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git worktree remove "${tmpWorktree}" --force`, {
         cwd: workdir,
       });
@@ -576,16 +654,21 @@ const dockerAvailable = ((): boolean => {
       );
 
       const checkDir = path.join(workdir, '.check-preserve');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.mkdirSync(checkDir, { recursive: true });
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
       const indexPath = path.join(checkDir, 'index.yaml');
 
-      const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
+      const parsed = parse(fs.readFileSync(indexPath, 'utf8')) as {
         apiVersion: string;
         entries: Record<string, Array<Record<string, unknown>>>;
       };
 
-      expect(Object.keys(parsed.entries).sort()).toEqual(['app', 'other']);
+      expect(
+        Object.keys(parsed.entries).toSorted((a, b) => a.localeCompare(b)),
+      ).toEqual(['app', 'other']);
       expect(parsed.entries.other).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ name: 'other', version: '9.9.9' }),
@@ -609,67 +692,100 @@ const dockerAvailable = ((): boolean => {
       'gh-pages worktree matrix: seed=%s urlMode=%s',
       ({ seed, urlMode }) => {
         it(`publishes and validates index.yaml for seed=${seed}, urlMode=${urlMode}`, async () => {
+          // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
           execSync('git init -b main', { cwd: workdir });
+          // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
           execSync('git config user.email "ci@example.com"', { cwd: workdir });
+          // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
           execSync('git config user.name "CI Tester"', { cwd: workdir });
+          // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
           execSync('git add .', { cwd: workdir });
+          // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
           execSync('git commit -m "init matrix repo"', { cwd: workdir });
 
           const remoteDir = path.join(
             workdir,
             `.remote.${seed}.${urlMode}.git`,
           );
+          // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
           execSync(`git init --bare "${remoteDir}"`);
+          // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
           execSync(`git remote add origin "${remoteDir}"`, { cwd: workdir });
+          // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
           execSync('git push -u origin main', { cwd: workdir });
 
           if (seed === 'remote') {
             const tmp = path.join(workdir, `.seed-${seed}-${urlMode}`);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git worktree add --detach "${tmp}"`, { cwd: workdir });
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git -C "${tmp}" switch --orphan gh-pages`);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git -C "${tmp}" reset --hard`);
             const chartsDir = path.join(tmp);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             fs.mkdirSync(chartsDir, { recursive: true });
-            const seeded = yaml.stringify({ apiVersion: 'v1', entries: {} });
+            const seeded = stringify({ apiVersion: 'v1', entries: {} });
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             fs.writeFileSync(
               path.join(chartsDir, 'index.yaml'),
               seeded,
               'utf8',
             );
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git -C "${tmp}" add .`);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git -C "${tmp}" commit -m "seed remote gh-pages"`);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git -C "${tmp}" push origin gh-pages`);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git worktree remove "${tmp}" --force`, { cwd: workdir });
+            // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
             execSync('git branch -D gh-pages || true', { cwd: workdir });
           } else if (seed === 'local') {
             const tmp = path.join(workdir, `.seed-${seed}-${urlMode}`);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git worktree add --detach "${tmp}"`, { cwd: workdir });
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git -C "${tmp}" switch --orphan gh-pages`);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git -C "${tmp}" reset --hard`);
             const chartsDir = path.join(tmp);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             fs.mkdirSync(chartsDir, { recursive: true });
-            const seeded = yaml.stringify({ apiVersion: 'v1', entries: {} });
+            const seeded = stringify({ apiVersion: 'v1', entries: {} });
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             fs.writeFileSync(
               path.join(chartsDir, 'index.yaml'),
               seeded,
               'utf8',
             );
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git -C "${tmp}" add .`);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git -C "${tmp}" commit -m "seed local gh-pages"`);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git -C "${tmp}" branch -M gh-pages`);
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             const head = execSync(`git -C "${tmp}" rev-parse gh-pages`)
               .toString('utf8')
               .trim();
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git update-ref refs/heads/gh-pages ${head}`, {
               cwd: workdir,
             });
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(`git worktree remove "${tmp}" --force`, { cwd: workdir });
+            // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
             execSync(
+              // eslint-disable-next-line sonarjs/no-os-command-from-path -- test shells out to git and docker from PATH on purpose
               'git show-ref --verify --quiet refs/remotes/origin/gh-pages || true',
               { cwd: workdir },
             );
           } else {
+            // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
             execSync('git branch -D gh-pages || true', { cwd: workdir });
+            // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
             execSync('git push origin :gh-pages || true', { cwd: workdir });
           }
 
@@ -712,6 +828,7 @@ const dockerAvailable = ((): boolean => {
             ),
           ).resolves.toBeUndefined();
 
+          // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
           const lsRemote = execSync('git ls-remote --heads origin gh-pages', {
             cwd: workdir,
           }).toString('utf8');
@@ -721,12 +838,16 @@ const dockerAvailable = ((): boolean => {
             workdir,
             `.check-matrix-${seed}-${urlMode}`,
           );
+          // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
           fs.mkdirSync(checkDir, { recursive: true });
+          // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
           execSync(`git -C "${workdir}" worktree add "${checkDir}" gh-pages`);
           const indexPath = path.join(checkDir, 'index.yaml');
+          // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
           expect(fs.existsSync(indexPath)).toBe(true);
 
-          const parsed = yaml.parse(fs.readFileSync(indexPath, 'utf8')) as {
+          // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
+          const parsed = parse(fs.readFileSync(indexPath, 'utf8')) as {
             apiVersion: string;
             entries: Record<string, Array<{ version: string; urls: string[] }>>;
           };
@@ -766,26 +887,38 @@ function wiring(base: string): {
   const remote = path.join(base, 'remote.git');
   const bin = path.join(base, 'bin');
   const dockerLog = path.join(base, 'docker.log');
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
   fs.mkdirSync(path.join(repo, 'app'), { recursive: true });
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
   fs.mkdirSync(path.join(repo, 'dist', 'charts'), { recursive: true });
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
   fs.mkdirSync(bin);
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
   fs.writeFileSync(
     path.join(repo, 'app', 'Chart.yaml'),
     'apiVersion: v2\nname: app\nversion: 1.0.0\n',
   );
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
   fs.writeFileSync(path.join(repo, 'dist', 'charts', 'app-1.0.0.tgz'), 'tgz');
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
   fs.writeFileSync(path.join(repo, 'dist', 'charts', 'app-0.9.0.tgz'), 'old');
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
   fs.writeFileSync(
     path.join(bin, 'docker'),
     `#!/bin/sh\nprintf 'CALL %s\\n' "$*" >> "${dockerLog}"\nprintf 'ENV:%s\\n' "$OCI_PASSWORD" >> "${dockerLog}"\ncase "$*" in *"$DOCKER_FAIL_ON"*) [ -n "$DOCKER_FAIL_ON" ] && exit 1;; esac\nexit 0\n`,
     { mode: 0o755 },
   );
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
   execSync(`git init --quiet --bare "${remote}"`);
+  // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
   execSync('git init --quiet', { cwd: repo });
+  // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
   execSync('git config user.name t && git config user.email t@example.test', {
     cwd: repo,
   });
+  // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
   execSync('git add -A && git commit --quiet -m init', { cwd: repo });
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
   execSync(`git remote add origin "${remote}"`, { cwd: repo });
   return {
     repo,
@@ -829,6 +962,7 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
   const OCI = 'oci://reg.example.test:5000/charts';
 
   it('verifyConditions refuses incomplete OCI credentials', async () => {
+    // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-'));
     try {
       const w = wiring(dir);
@@ -847,11 +981,13 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
         ).rejects.toMatchObject({ code: 'EOCICREDSINCOMPLETE' });
       });
     } finally {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it('prepare lints, renders, documents and packages in order, after setting the version', async () => {
+    // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-'));
     try {
       const w = wiring(dir);
@@ -863,6 +999,7 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
           nextRelease: { version: '2.0.0' },
         } as unknown as PrepareContext);
       });
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       const calls = fs
         .readFileSync(w.dockerLog, 'utf8')
         .split('\n')
@@ -871,14 +1008,17 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
         calls.map((c) => /(lint|template|helm-docs|package)/.exec(c)?.[1]),
       ).toEqual(['lint', 'template', 'helm-docs', 'package']);
       expect(
+        // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
         fs.readFileSync(path.join(w.repo, 'app', 'Chart.yaml'), 'utf8'),
       ).toContain('version: 2.0.0');
     } finally {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it('publish hands the OCI password over in the environment only', async () => {
+    // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-'));
     try {
       const w = wiring(dir);
@@ -889,12 +1029,14 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
             chartPath: 'app',
             ociRepo: OCI,
             ociUsername: 'user',
+            // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- test fixture value, not a credential
             ociPassword: 'hunter2value',
             ghPages: { enabled: false },
           },
           { cwd: w.repo, logger } as unknown as PublishContext,
         );
       });
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       const docker = fs.readFileSync(w.dockerLog, 'utf8');
       expect(docker).toContain('--env=OCI_PASSWORD');
       expect(docker).toContain('ENV:hunter2value');
@@ -903,18 +1045,22 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
       );
       expect(lines.join('\n')).not.toContain('hunter2value');
     } finally {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it('publish checks the gh-pages index before the OCI push', async () => {
+    // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-'));
     try {
       const w = wiring(dir);
+      // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
       const original = execSync('git rev-parse --abbrev-ref HEAD', {
         cwd: w.repo,
         encoding: 'utf8',
       }).trim();
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       execSync(
         String.raw`git checkout --quiet --orphan gh-pages && git rm -rf --quiet . && printf 'entries: []\n' > index.yaml && git add index.yaml && git commit --quiet -m pages && git push --quiet origin gh-pages && git checkout --quiet -f ${original} && git branch -D --quiet gh-pages`,
         { cwd: w.repo },
@@ -928,13 +1074,16 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
           } as unknown as PublishContext),
         ).rejects.toMatchObject({ code: 'EINVALIDINDEX' });
       });
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       expect(fs.existsSync(w.dockerLog)).toBe(false);
     } finally {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it('publish removes the working tree when the OCI push fails', async () => {
+    // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-'));
     try {
       const w = wiring(dir);
@@ -950,16 +1099,20 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
           ).rejects.toThrow();
         },
       );
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       expect(fs.existsSync(path.join(w.repo, '.gh-pages-tmp'))).toBe(false);
       expect(
+        // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
         execSync('git worktree list', { cwd: w.repo, encoding: 'utf8' }),
       ).not.toContain('.gh-pages-tmp');
     } finally {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("publish pushes only the chart's own package and uses the commit author from the environment", async () => {
+    // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wire-'));
     try {
       const w = wiring(dir);
@@ -979,6 +1132,7 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
           } as unknown as PublishContext);
         },
       );
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       const pushes = fs
         .readFileSync(w.dockerLog, 'utf8')
         .split('\n')
@@ -986,12 +1140,14 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
       expect(pushes).toHaveLength(1);
       expect(pushes[0]).toContain('app-1.0.0.tgz');
       expect(
+        // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
         execFileSync('git', ['log', '-1', '--format=%an|%ae', 'gh-pages'], {
           cwd: w.remote,
           encoding: 'utf8',
         }).trim(),
       ).toBe('Release Bot|bot@example.test');
-      const index = yaml.parse(
+      const index = parse(
+        // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git and docker synchronously from PATH on purpose
         execSync('git show gh-pages:index.yaml', {
           cwd: w.remote,
           encoding: 'utf8',
@@ -1002,6 +1158,7 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
         'https://github.com/o/r/releases/download/v1.0.0/app-1.0.0.tgz',
       ]);
     } finally {
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper, async would ripple through every test
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });

@@ -1,6 +1,6 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as yaml from 'yaml';
+import fs from 'node:fs';
+import path from 'node:path';
+import yaml from 'yaml';
 import { Chart } from '../src/chart.js';
 import { ChartPackage } from '../src/chart-package.js';
 import { ChartRepository, ChartEntry } from '../src/chart-repository.js';
@@ -35,6 +35,7 @@ function writeChartYaml(
   extra?: Record<string, unknown>,
 ): string {
   const chartDir = path.join(dir, 'charts', name);
+  // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
   fs.mkdirSync(chartDir, { recursive: true });
   const chartFile = path.join(chartDir, 'Chart.yaml');
   const doc = yaml.stringify({
@@ -44,6 +45,7 @@ function writeChartYaml(
     description: 'X',
     ...extra,
   });
+  // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
   fs.writeFileSync(chartFile, doc, 'utf8');
   return chartDir;
 }
@@ -55,7 +57,9 @@ function writeTgz(
   content: string,
 ): string {
   const tgz = path.join(dir, 'dist', 'charts', `${name}-${version}.tgz`);
+  // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
   fs.mkdirSync(path.dirname(tgz), { recursive: true });
+  // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
   fs.writeFileSync(tgz, content, 'utf8');
   return tgz;
 }
@@ -67,6 +71,7 @@ interface ChartRepositoryDoc {
 }
 
 function readIndex(idxPath: string): ChartRepositoryDoc {
+  // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
   return yaml.parse(fs.readFileSync(idxPath, 'utf8')) as ChartRepositoryDoc;
 }
 
@@ -351,6 +356,7 @@ describe('ChartRepository', () => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
       const chart = chartAt(
         writeChartYaml(base, 'svc', '7.7.7', {
+          // eslint-disable-next-line sonarjs/no-clear-text-protocols -- test fixture: the http URL is only parsed from stored index YAML and is never fetched
           urls: ['http://bad/url.tgz'],
           created: '1999-01-01T00:00:00.000Z',
           digest: 'deadbeef',
@@ -428,6 +434,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
     'keeps unknown top-level keys, odd items and non-list chart keys through append',
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(
         file,
         yaml.stringify({
@@ -447,6 +454,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
       ChartRepository.open(path.dirname(file))
         .add(chart, ChartPackage.at(tgz), '')
         .save();
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       const doc = yaml.parse(fs.readFileSync(out, 'utf8'));
       expect(doc.apiVersion).toBe('v1');
       expect(doc.annotations).toEqual({ team: 'platform' });
@@ -467,6 +475,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
   ])('refuses to append over a chart key that is %s', (_label, content) =>
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(file, content, 'utf8');
       const chart = chartAt(writeChartYaml(base, 'demo', '1.0.0'));
       const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
@@ -487,6 +496,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
   ])('treats %s as empty', (_label, content) =>
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(file, content, 'utf8');
       const chart = chartAt(writeChartYaml(base, 'demo', '1.0.0'));
       const tgz = writeTgz(base, 'demo', '1.0.0', 'x');
@@ -504,6 +514,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
   ])('refuses an index whose entries is %s', (_label, content) =>
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(file, content, 'utf8');
       expect(() => ChartRepository.open(path.dirname(file))).toThrow(
         expect.objectContaining({ code: 'EINVALIDINDEX' }),
@@ -516,6 +527,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
       const out = path.join(base, 'index.yaml');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(file, '', 'utf8');
       ChartRepository.open(path.dirname(file)).save();
       expect(readIndex(out)).toEqual({ apiVersion: 'v1', entries: {} });
@@ -526,6 +538,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
     'refuses to replace an index that is not a mapping',
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(file, '- a\n- b\n', 'utf8');
       expect(() => ChartRepository.open(path.dirname(file))).toThrow(
         expect.objectContaining({ code: 'EINVALIDINDEX' }),
@@ -544,6 +557,7 @@ describe('ChartRepository.append with unusual chart names', () => {
       ChartRepository.open(path.dirname(out))
         .add(chart, ChartPackage.at(tgz), '')
         .save();
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       const written = yaml.parse(fs.readFileSync(out, 'utf8'));
       expect(
         written.entries.constructor.map((e: ChartEntry) => e.version),
@@ -557,6 +571,7 @@ describe('ChartRepository key order', () => {
     'writes apiVersion, entries, other keys, then generated',
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(
         file,
         'generated: old\nannotations:\n  a: b\nentries: {}\n',
@@ -568,6 +583,7 @@ describe('ChartRepository key order', () => {
       ChartRepository.open(path.dirname(file))
         .add(chart, ChartPackage.at(tgz), '')
         .save();
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       expect(Object.keys(yaml.parse(fs.readFileSync(out, 'utf8')))).toEqual([
         'apiVersion',
         'entries',
@@ -583,6 +599,7 @@ describe('ChartRepository YAML handling', () => {
     'turns a YAML syntax error into a coded error that names the file',
     withTempDir((base: string) => {
       const file = path.join(base, 'index.yaml');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(file, 'a: 1\n---\nb: 2\n', 'utf8');
       expect(() => ChartRepository.open(path.dirname(file))).toThrow(
         expect.objectContaining({
@@ -605,6 +622,7 @@ describe('ChartRepository YAML handling', () => {
       ChartRepository.open(path.dirname(out))
         .add(chart, ChartPackage.at(tgz), '')
         .save();
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       expect(fs.readFileSync(out, 'utf8')).toContain(
         `description: ${description}\n`,
       );

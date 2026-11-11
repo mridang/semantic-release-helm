@@ -7,6 +7,8 @@ import { fakeRunner, recordingLogger } from './utils/runner.js';
 
 const PASSWORD = 'placeholder$x "q" \'z\' `id`';
 const PKG = ChartPackage.at('/repo/dist/charts/app-1.0.0.tgz');
+/** An unset option, declared without a literal `undefined` so it can be passed explicitly. */
+let absent: undefined;
 
 const make = (
   change: Partial<ConstructorParameters<typeof OciRegistry>[0]> = {},
@@ -71,11 +73,12 @@ describe('OciRegistry.publish', () => {
 
   it('has no digest when Helm printed none', async () => {
     const { registry } = make();
-    expect((await registry.publish(PKG)).digest).toBeUndefined();
+    const published = await registry.publish(PKG);
+    expect(published.digest).toBeUndefined();
   });
 
   it('has an empty environment without a password', async () => {
-    const { registry, calls } = make({ password: undefined });
+    const { registry, calls } = make({ password: absent });
     await registry.publish(PKG);
     expect(calls[0]?.options?.env).toEqual({});
     expect(scriptOf(calls[0]?.args)).not.toContain('login');
@@ -96,9 +99,9 @@ describe('OciRegistry.publish', () => {
 
   it('skips the login without a username, a password or a host', async () => {
     for (const change of [
-      { username: undefined },
-      { password: undefined },
-      { hostPort: undefined },
+      { username: absent },
+      { password: absent },
+      { hostPort: absent },
     ]) {
       const { registry, calls } = make(change);
       await registry.publish(PKG);

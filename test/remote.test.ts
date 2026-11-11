@@ -1,4 +1,4 @@
-import * as path from 'node:path';
+import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
 import { Remote } from '../src/remote.js';

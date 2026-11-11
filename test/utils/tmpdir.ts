@@ -1,17 +1,17 @@
 // utils/tmpdir.ts
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
+import { mkdtemp, rm } from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
 
 /**
  * Creates a new temporary directory under the OS temp root and returns
- * its absolute path. The directory is created synchronously and exists
- * when the function returns. A `prefix` helps group test artifacts.
+ * its absolute path. The directory is created before the promise resolves.
+ * A `prefix` helps group test artifacts.
  * @param prefix - Directory name prefix, e.g. "sr-".
  * @returns Absolute path to the created temporary directory.
  */
-function makeTempDir(prefix = 'sr-'): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+async function makeTempDir(prefix = 'sr-'): Promise<string> {
+  return mkdtemp(path.join(os.tmpdir(), prefix));
 }
 
 /**
@@ -32,11 +32,11 @@ export function withTempDir(
   fn: (base: string) => void | Promise<void>,
 ): () => Promise<void> {
   return async () => {
-    const base = makeTempDir('sr-');
+    const base = await makeTempDir('sr-');
     try {
       await fn(base);
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      await rm(base, { recursive: true, force: true });
     }
   };
 }

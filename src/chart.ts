@@ -264,6 +264,7 @@ export class Chart {
    */
   static open(options: ChartOptions): Chart {
     const file = Chart.fileOf(options);
+    // eslint-disable-next-line n/no-sync -- Chart.open, exists and save are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
     const text = fs.readFileSync(file, 'utf8');
     return new Chart(options, text, readFields(text, file));
   }
@@ -274,6 +275,7 @@ export class Chart {
    * @returns True when the file exists.
    */
   static exists(options: Pick<ChartOptions, 'directory' | 'cwd'>): boolean {
+    // eslint-disable-next-line n/no-sync -- Chart.open, exists and save are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
     return fs.existsSync(Chart.fileOf(options));
   }
 
@@ -357,6 +359,7 @@ export class Chart {
    * @returns This chart.
    */
   save(): Chart {
+    // eslint-disable-next-line n/no-sync -- Chart.open, exists and save are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
     fs.writeFileSync(Chart.fileOf(this.options), this.text, 'utf8');
     return this;
   }
@@ -396,6 +399,7 @@ export class Chart {
     const { logger, cwd, docs, directory } = this.options;
     try {
       const readmePath = path.join(cwd, directory, 'README.md');
+      // eslint-disable-next-line n/no-sync -- Chart.open, exists and save are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
       if (fs.existsSync(readmePath)) {
         const { changed } = normalizeReadmeValuesTableFile(readmePath);
         if (changed) {

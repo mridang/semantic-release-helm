@@ -1,7 +1,7 @@
 /**
  * @file Publishes packaged charts and index.yaml to the gh-pages branch through a worktree.
  */
-import fs from 'node:fs';
+import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
 import type { Chart } from './chart.js';
@@ -75,7 +75,7 @@ export async function abandonGhPages(plan: GhPagesPlan): Promise<void> {
  */
 async function discardWorktree(worktree: Worktree): Promise<void> {
   await worktree.remove();
-  fs.rmSync(worktree.directory, { recursive: true, force: true });
+  await rm(worktree.directory, { recursive: true, force: true });
 }
 
 /**
@@ -107,7 +107,7 @@ export async function planGhPages(
   if (!(await repository.removeWorktree(directory))) {
     context.logger.log('gh-pages cleanup: worktree not found (expected)');
   }
-  fs.rmSync(directory, { recursive: true, force: true });
+  await rm(directory, { recursive: true, force: true });
 
   const fetched = await remote.fetch(branch);
   if (fetched === undefined) {
@@ -120,7 +120,7 @@ export async function planGhPages(
     branch,
     fetched ?? { name: branch, remote: remote.name },
   );
-  fs.mkdirSync(directory, { recursive: true });
+  await mkdir(directory, { recursive: true });
 
   const configured = repositoryUrl ? RemoteUrl.parse(repositoryUrl) : undefined;
   const releaseBase = remote.url.releaseBase(configured);

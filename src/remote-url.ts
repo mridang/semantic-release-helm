@@ -99,6 +99,7 @@ export class RemoteUrl {
       return undefined;
     }
     const repoPath = parts.pathname
+      // eslint-disable-next-line sonarjs/super-linear-regex -- a repository path is one short URL segment run, so the trailing slash scan stays small
       .replaceAll(/^\/+|\/+$/g, '')
       .replace(/\.git$/, '');
     if (repoPath.length === 0) {
@@ -137,6 +138,7 @@ export class RemoteUrl {
    * @returns The redacted text.
    */
   toString(): string {
+    // eslint-disable-next-line sonarjs/super-linear-regex -- the userinfo is one short remote URL token, so the scan stays small
     return this.raw.replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, '$1***@');
   }
 }

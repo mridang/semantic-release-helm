@@ -6,7 +6,8 @@
  * @returns The word wrapped in single quotes.
  */
 export function shQuote(input: string): string {
-  return `'${input.replaceAll("'", String.raw`'\''`)}'`;
+  const escaped = input.replaceAll("'", String.raw`'\''`);
+  return `'${escaped}'`;
 }
 
 /**

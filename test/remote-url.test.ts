@@ -15,7 +15,9 @@ describe('RemoteUrl.webBase', () => {
     ['ssh://git@github.com:2222/o/r.git', 'https://github.com/o/r'],
     ['git://github.com/o/r.git', 'https://github.com/o/r'],
     ['https://ghes.corp:8443/o/r.git', 'https://ghes.corp:8443/o/r'],
+    // eslint-disable-next-line sonarjs/no-clear-text-protocols, unicorn/prefer-https -- test fixture, the URL is only parsed and never fetched
     ['http://ghes.corp:8080/o/r', 'http://ghes.corp:8080/o/r'],
+    // eslint-disable-next-line sonarjs/no-clear-text-protocols, unicorn/prefer-https -- test fixture, the URL is only parsed and never fetched
     ['http://git.internal:3000/o/r.git', 'http://git.internal:3000/o/r'],
     [
       'https://x-access-token:TOKEN@github.com/o/r.git',

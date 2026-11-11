@@ -1,7 +1,7 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
-import * as yaml from 'yaml';
+import yaml from 'yaml';
 import { Chart } from '../src/chart.js';
 import { ChartPackage } from '../src/chart-package.js';
 import { DockerImage } from '../src/docker.js';
@@ -22,12 +22,16 @@ import { withTempDir } from './utils/tmpdir.js';
 function scenario(base: string): { repo: string; remote: string } {
   const repo = path.join(base, 'repo');
   const remote = path.join(base, 'remote.git');
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
   fs.mkdirSync(path.join(repo, 'app'), { recursive: true });
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
   fs.mkdirSync(path.join(repo, 'dist', 'charts'), { recursive: true });
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
   fs.writeFileSync(
     path.join(repo, 'app', 'Chart.yaml'),
     'apiVersion: v2\nname: app\nversion: 1.0.0\n',
   );
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
   fs.writeFileSync(path.join(repo, 'dist', 'charts', 'app-1.0.0.tgz'), 'tgz');
   git(base, 'init', '--quiet', '--bare', remote);
   git(repo, 'init', '--quiet');
@@ -44,6 +48,7 @@ function seedPages(repo: string, content: string): void {
   const original = git(repo, 'rev-parse', '--abbrev-ref', 'HEAD').trim();
   git(repo, 'checkout', '--quiet', '--orphan', 'gh-pages');
   git(repo, 'rm', '-rf', '--quiet', '.');
+  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
   fs.writeFileSync(path.join(repo, 'index.yaml'), content);
   git(repo, 'add', 'index.yaml');
   git(repo, 'commit', '--quiet', '-m', 'pages');
@@ -53,6 +58,9 @@ function seedPages(repo: string, content: string): void {
 }
 
 const author = { name: 'Bot', email: 'bot@example.test' };
+
+/** No release tag, so release links use the package version. */
+let noTag: string | undefined;
 
 /** The context, and the chart, for a scenario's repository. */
 function setup(repo: string) {
@@ -148,12 +156,13 @@ describe('planGhPages and publishGhPages', () => {
       await publishGhPages(context, plan, {
         packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
-        tag: undefined,
+        tag: noTag,
       });
       const index = yaml.parse(git(s.remote, 'show', 'gh-pages:index.yaml'));
       expect(index.entries.app[0].urls).toEqual([
         'https://github.com/o/r/releases/download/v1.0.0/app-1.0.0.tgz',
       ]);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
       expect(fs.existsSync(path.join(s.repo, '.gh-pages-tmp'))).toBe(false);
     }),
   );
@@ -167,7 +176,7 @@ describe('planGhPages and publishGhPages', () => {
       await publishGhPages(context, plan, {
         packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
-        tag: undefined,
+        tag: noTag,
       });
       const index = yaml.parse(git(s.remote, 'show', 'gh-pages:index.yaml'));
       expect(index.entries.app[0].urls).toEqual(['app-1.0.0.tgz']);
@@ -190,7 +199,7 @@ describe('planGhPages and publishGhPages', () => {
       await publishGhPages(context, plan, {
         packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
-        tag: undefined,
+        tag: noTag,
       });
       const index = yaml.parse(git(s.remote, 'show', 'gh-pages:index.yaml'));
       expect(
@@ -249,7 +258,7 @@ describe('planGhPages and publishGhPages', () => {
       await publishGhPages(context, plan, {
         packages: ChartPackage.find(path.join(s.repo, 'dist', 'charts')),
         author,
-        tag: undefined,
+        tag: noTag,
       });
       const index = yaml.parse(git(s.remote, 'show', 'gh-pages:index.yaml'));
       expect(index.entries.app[0].urls).toEqual([
@@ -277,6 +286,7 @@ describe('planGhPages and publishGhPages', () => {
       seedPages(s.repo, 'entries: []\n');
       const { context, chart } = setup(s.repo);
       await expect(planGhPages(context, settings(chart))).rejects.toThrow();
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
       expect(fs.existsSync(path.join(s.repo, '.gh-pages-tmp'))).toBe(false);
       expect(git(s.repo, 'worktree', 'list')).not.toContain('.gh-pages-tmp');
     }),
@@ -289,6 +299,7 @@ describe('planGhPages and publishGhPages', () => {
       const { context, chart } = setup(s.repo);
       const plan = await planGhPages(context, settings(chart));
       await abandonGhPages(plan);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
       expect(fs.existsSync(path.join(s.repo, '.gh-pages-tmp'))).toBe(false);
       expect(git(s.repo, 'worktree', 'list')).not.toContain('.gh-pages-tmp');
     }),

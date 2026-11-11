@@ -1,6 +1,6 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as yaml from 'yaml';
+import fs from 'node:fs';
+import path from 'node:path';
+import yaml from 'yaml';
 import {
   Chart,
   ChartYaml,
@@ -36,6 +36,7 @@ function writeChart(
   extra?: Record<string, unknown>,
 ): string {
   const chartDir = path.join(dir, name);
+  // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
   fs.mkdirSync(chartDir, { recursive: true });
   const chartFile = path.join(chartDir, 'Chart.yaml');
   const doc = yaml.stringify({
@@ -45,6 +46,7 @@ function writeChart(
     description: 'X',
     ...extra,
   } as ChartYaml);
+  // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
   fs.writeFileSync(chartFile, doc, 'utf8');
   return chartDir;
 }
@@ -105,6 +107,7 @@ describe('Chart', () => {
       });
       const file = path.join(dir, 'Chart.yaml');
       chartAt(dir).withVersion('0.2.0').save();
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       expect(yaml.parse(fs.readFileSync(file, 'utf8')) as ChartYaml).toEqual({
         apiVersion: 'v2',
         name: 'demo',
@@ -126,6 +129,7 @@ describe('Chart', () => {
     withTempDir((base: string) => {
       const dir = writeChart(base, 'demo', '9.9.9');
       chartAt(dir).save();
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       const text = fs.readFileSync(path.join(dir, 'Chart.yaml'), 'utf8');
       expect(yaml.parse(text) as ChartYaml).toEqual({
         apiVersion: 'v2',
@@ -162,7 +166,9 @@ describe('Chart.open with unusual Chart.yaml content', () => {
     'stringifies a numeric name, version and apiVersion',
     withTempDir((base: string) => {
       const dir = path.join(base, 'odd');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.mkdirSync(dir, { recursive: true });
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(
         path.join(dir, 'Chart.yaml'),
         'name: 7\nversion: 1.5\napiVersion: 2\n',
@@ -183,14 +189,14 @@ describe('Chart.open with unusual Chart.yaml content', () => {
   ])('treats %s as an empty chart', (_label, content) =>
     withTempDir((base: string) => {
       const dir = path.join(base, 'empty');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.mkdirSync(dir, { recursive: true });
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(path.join(dir, 'Chart.yaml'), content, 'utf8');
       const chart = chartAt(dir);
-      expect({
-        name: chart.name(),
-        version: chart.version(),
-        apiVersion: chart.apiVersion(),
-      }).toEqual({ name: '', version: undefined, apiVersion: undefined });
+      expect({ name: chart.name() }).toEqual({ name: '' });
+      expect(chart.version()).toBeUndefined();
+      expect(chart.apiVersion()).toBeUndefined();
     })(),
   );
 });
@@ -357,7 +363,9 @@ describe('Chart.open with invalid YAML', () => {
     'raises a coded error that names the file',
     withTempDir((base: string) => {
       const dir = path.join(base, 'bad');
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.mkdirSync(dir, { recursive: true });
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(path.join(dir, 'Chart.yaml'), 'a: 1\n---\nb: 2\n');
       expect(() => chartAt(dir)).toThrow(
         expect.objectContaining({
@@ -429,10 +437,12 @@ describe('Chart working with Helm', () => {
       expect(next.version()).toBe('2.0.0');
       expect(chart.version()).toBe('1.2.3');
       expect(
+        // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
         fs.readFileSync(path.join(base, 'app', 'Chart.yaml'), 'utf8'),
       ).toContain('1.2.3');
       expect(next.save()).toBe(next);
       expect(
+        // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
         fs.readFileSync(path.join(base, 'app', 'Chart.yaml'), 'utf8'),
       ).toContain('2.0.0');
     }),
@@ -442,6 +452,7 @@ describe('Chart working with Helm', () => {
     'normalizes the README and runs helm-docs',
     withTempDir(async (base) => {
       const { chart, calls, lines } = chartIn(base);
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(
         path.join(base, 'app', 'README.md'),
         '<!-- render.chart.valuesTable -->\nold\n<!-- end.chart.valuesTable -->\n',
@@ -453,6 +464,7 @@ describe('Chart working with Helm', () => {
         '--template-files=README.md',
       ]);
       expect(
+        // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
         fs.readFileSync(path.join(base, 'app', 'README.md'), 'utf8'),
       ).toContain('{{ template "chart.valuesTable" . }}');
       expect(lines).toContain(
@@ -470,6 +482,7 @@ describe('Chart working with Helm', () => {
       expect(a.lines).toContain(
         'helm-docs: README.md not found; skipping normalization',
       );
+      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
       fs.writeFileSync(path.join(base, 'app', 'README.md'), '# nothing\n');
       const b = chartIn(base);
       await b.chart.document([]);

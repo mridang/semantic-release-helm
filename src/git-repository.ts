@@ -59,8 +59,7 @@ export class GitRepository {
    * @throws SemanticReleaseError (`ENOREMOTE`) when it is not configured.
    */
   async remote(name: string): Promise<Remote> {
-    const url = await this.git(['remote', 'get-url', name]).then(
-      (text): string | undefined => text,
+    const url = await this.git(['remote', 'get-url', name]).catch(
       (): string | undefined => undefined,
     );
     if (url === undefined) {

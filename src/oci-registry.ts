@@ -116,9 +116,10 @@ export class OciRegistry {
       return [];
     }
     const configDir = '/root/.config/helm/registry';
+    const auth = `{"auths":{"${hostPort}":{"insecure":true}}}`;
     return [
       `mkdir --parents ${configDir}`,
-      `printf %s ${shQuote(`{"auths":{"${hostPort}":{"insecure":true}}}`)} > ${configDir}/config.json`,
+      `printf %s ${shQuote(auth)} > ${configDir}/config.json`,
     ];
   }
 

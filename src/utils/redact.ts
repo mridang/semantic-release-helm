@@ -12,17 +12,21 @@
  * @returns The text with every credential replaced by `***`.
  */
 export function redactCredentials(text: string): string {
-  return text
-    .replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:\S*@/gi, '$1***@')
-    .replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+@/gi, '$1***@')
-    .replaceAll(
-      /([?&](?:access_token|token|password|private_token)=)[^&\s#'"]+/gi,
-      '$1***',
-    )
-    .replaceAll(/\b((?:proxy-)?authorization)\s*:[^\r\n]*/gi, '$1: ***')
-    .replaceAll(/\bbearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer ***')
-    .replaceAll(
-      /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{16,})/g,
-      '***',
-    );
+  return (
+    text
+      // eslint-disable-next-line sonarjs/super-linear-regex -- the userinfo may hold @ and /, and the input is one short log or error line
+      .replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:\S*@/gi, '$1***@')
+      // eslint-disable-next-line sonarjs/super-linear-regex -- the userinfo may hold @ and /, and the input is one short log or error line
+      .replaceAll(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+@/gi, '$1***@')
+      .replaceAll(
+        /([?&](?:access_token|token|password|private_token)=)[^&\s#'"]+/gi,
+        '$1***',
+      )
+      .replaceAll(/\b((?:proxy-)?authorization)\s*:[^\r\n]*/gi, '$1: ***')
+      .replaceAll(/\bbearer\s+[\w.~+/=-]+/gi, 'Bearer ***')
+      .replaceAll(
+        /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|glpat-[A-Za-z0-9_-]{16,})/g,
+        '***',
+      )
+  );
 }

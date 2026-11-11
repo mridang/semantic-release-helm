@@ -116,7 +116,7 @@ function scrubValues(
   return redactCredentials(
     Object.values(env)
       .filter((value) => value.length >= 3)
-      .flatMap(echoForms)
+      .flatMap((value) => echoForms(value))
       .reduce((acc, form) => acc.split(form).join('***'), text),
   );
 }

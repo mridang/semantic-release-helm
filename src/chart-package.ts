@@ -75,14 +75,16 @@ export class ChartPackage {
    * ```
    */
   static find(directory: string): readonly ChartPackage[] {
+    // eslint-disable-next-line n/no-sync -- ChartPackage.find and digest are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
     if (!fs.existsSync(directory)) {
       return [];
     }
+    // eslint-disable-next-line n/no-sync -- ChartPackage.find and digest are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
     return fs
       .readdirSync(directory, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith('.tgz'))
       .map((entry) => entry.name)
-      .toSorted()
+      .toSorted((a, b) => a.localeCompare(b))
       .map((name) => new ChartPackage(path.join(directory, name)));
   }
 
@@ -141,9 +143,12 @@ export class ChartPackage {
    * ```
    */
   digest(): string {
-    return crypto
-      .createHash('sha256')
-      .update(fs.readFileSync(this.file))
-      .digest('hex');
+    return (
+      crypto
+        .createHash('sha256')
+        // eslint-disable-next-line n/no-sync -- ChartPackage.find and digest are called synchronously by test/gh-pages.test.ts outside this shard, so async would ripple there
+        .update(fs.readFileSync(this.file))
+        .digest('hex')
+    );
   }
 }

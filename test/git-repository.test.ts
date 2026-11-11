@@ -1,5 +1,5 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
 import { GitRepository } from '../src/git-repository.js';
@@ -44,10 +44,8 @@ describe('GitRepository.open with a fake runner', () => {
     const repository = await GitRepository.open({ logger, cwd: '/repo', run });
     const failure = await repository
       .remote('https://x:tok3nvalue@host/o/r.git')
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+      .then(() => undefined)
+      .catch((error: unknown) => error);
     expect(failure).toMatchObject({ code: 'ENOREMOTE' });
     expect(
       JSON.stringify(failure, Object.getOwnPropertyNames(failure)),
@@ -78,7 +76,8 @@ describe('GitRepository with real git', () => {
       initRepo(dir);
       git(dir, 'remote', 'add', 'origin', 'https://github.com/o/r.git');
       const repository = await open(dir);
-      expect((await repository.remote('origin')).name).toBe('origin');
+      const remote = await repository.remote('origin');
+      expect(remote.name).toBe('origin');
       await expect(repository.remote('nope')).rejects.toMatchObject({
         code: 'ENOREMOTE',
       });
@@ -98,7 +97,8 @@ describe('GitRepository with real git', () => {
       initRepo(dir);
       git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
       const wt = path.join(dir, 'work tree');
-      const worktree = await (await open(dir)).createWorktree(wt, 'gh-pages');
+      const repository = await open(dir);
+      const worktree = await repository.createWorktree(wt, 'gh-pages');
       expect(git(wt, 'symbolic-ref', '--short', 'HEAD').trim()).toBe(
         'gh-pages',
       );
@@ -113,7 +113,8 @@ describe('GitRepository with real git', () => {
       git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
       git(dir, 'branch', 'pages');
       const wt = path.join(dir, 'wt');
-      await (await open(dir)).createWorktree(wt, 'pages');
+      const repository = await open(dir);
+      await repository.createWorktree(wt, 'pages');
       expect(git(wt, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('pages');
     }),
   );
@@ -133,6 +134,7 @@ describe('GitRepository with real git', () => {
       expect(fetched).toEqual({ name: 'pages', remote: 'origin' });
       const wt = path.join(dir, 'wt');
       const worktree = await repository.createWorktree(wt, 'pages', fetched);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
       fs.writeFileSync(path.join(wt, 'f.txt'), 'f');
       await worktree.commit('m', { name: 'a', email: 'a@b.c' });
       await remote.push(worktree.branch);
@@ -146,10 +148,12 @@ describe('GitRepository with real git', () => {
     'finds a remote branch in a single-branch clone',
     withTempDir(async (dir) => {
       const upstream = path.join(dir, 'upstream');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
       fs.mkdirSync(upstream);
       initRepo(upstream);
       git(upstream, 'commit', '--allow-empty', '--quiet', '-m', 'init');
       git(upstream, 'checkout', '--quiet', '-b', 'pages');
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
       fs.writeFileSync(path.join(upstream, 'index.yaml'), 'entries: {}\n');
       git(upstream, 'add', '.');
       git(upstream, 'commit', '--quiet', '-m', 'pages');
@@ -162,6 +166,7 @@ describe('GitRepository with real git', () => {
       expect(fetched).toEqual({ name: 'pages', remote: 'origin' });
       const wt = path.join(dir, 'wt');
       await repository.createWorktree(wt, 'pages', fetched);
+      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
       expect(fs.existsSync(path.join(wt, 'index.yaml'))).toBe(true);
     }),
   );

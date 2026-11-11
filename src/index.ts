@@ -1,7 +1,7 @@
 /**
  * @file Entry point that wires semantic-release lifecycle hooks to chart linting, packaging and publishing.
  */
-import fs from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import SemanticReleaseError from '@semantic-release/error';
 import type {
   PrepareContext,
@@ -190,9 +190,7 @@ export async function prepare(
   await chart.document(cfg.getDocsArgs());
 
   const outDir = `${cwd}/dist/charts`;
-  if (!fs.existsSync(outDir)) {
-    fs.mkdirSync(outDir, { recursive: true });
-  }
+  await mkdir(outDir, { recursive: true });
   await chart.package('dist/charts');
   logger.log('prepare: packaged chart(s) into dist/charts');
 
@@ -270,7 +268,7 @@ export async function publish(
   pluginConfig: HelmPluginConfig,
   context: PublishContext,
 ): Promise<void> {
-  const { logger } = context;
+  const { logger, options, nextRelease } = context;
   const cwd = context.cwd ?? process.cwd();
   const cfg = new HelmConfig(pluginConfig);
   const here = { logger, cwd };
@@ -308,7 +306,7 @@ export async function publish(
         remote: cfg.getGhRepo(),
         branch: cfg.getGhBranch(),
         url: cfg.getGhUrl(),
-        repositoryUrl: context.options?.repositoryUrl,
+        repositoryUrl: options?.repositoryUrl,
       })
     : undefined;
 
@@ -319,7 +317,7 @@ export async function publish(
     if (ghPlan) {
       await publishGhPages(here, ghPlan, {
         packages,
-        tag: context.nextRelease?.gitTag,
+        tag: nextRelease?.gitTag,
         author: {
           name: process.env.GIT_AUTHOR_NAME || COMMIT_NAME,
           email: process.env.GIT_AUTHOR_EMAIL || COMMIT_EMAIL,

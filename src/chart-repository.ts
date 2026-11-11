@@ -147,9 +147,11 @@ export class ChartRepository {
    */
   static open(directory: string): ChartRepository {
     const file = path.join(directory, 'index.yaml');
+    // eslint-disable-next-line n/no-sync -- ChartRepository.open and save are called synchronously by gh-pages.ts and test/gh-pages.test.ts, so async would ripple beyond this shard
     if (!fs.existsSync(file)) {
       return new ChartRepository(file, {}, {});
     }
+    // eslint-disable-next-line n/no-sync -- ChartRepository.open and save are called synchronously by gh-pages.ts and test/gh-pages.test.ts, so async would ripple beyond this shard
     const parsed = parseIndex(fs.readFileSync(file, 'utf8'), file);
     if (parsed === null || parsed === undefined) {
       return new ChartRepository(file, {}, {});
@@ -204,7 +206,10 @@ export class ChartRepository {
 
     const urls =
       baseUrl.trim().length > 0
-        ? [`${baseUrl.replace(/\/+$/, '')}/${filename}`]
+        ? [
+            // eslint-disable-next-line sonarjs/super-linear-regex -- the base URL is one short configured value, so the trailing slash scan stays small
+            `${baseUrl.replace(/\/+$/, '')}/${filename}`,
+          ]
         : [filename];
 
     const entry: ChartEntry = {
@@ -256,7 +261,9 @@ export class ChartRepository {
    * ```
    */
   save(): ChartRepository {
+    // eslint-disable-next-line n/no-sync -- ChartRepository.open and save are called synchronously by gh-pages.ts and test/gh-pages.test.ts, so async would ripple beyond this shard
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    // eslint-disable-next-line n/no-sync -- ChartRepository.open and save are called synchronously by gh-pages.ts and test/gh-pages.test.ts, so async would ripple beyond this shard
     fs.writeFileSync(
       this.file,
       yaml.stringify(

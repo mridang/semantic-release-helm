@@ -1,4 +1,3 @@
-import { Console } from 'node:console';
 import { Writable } from 'node:stream';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
@@ -28,7 +27,7 @@ function captureConsole() {
     },
   });
 
-  const logger = new Console(out, err);
+  const logger = new console.Console(out, err);
 
   const stdout = () => outChunks.join('');
   const stderr = () => errChunks.join('');
@@ -76,22 +75,19 @@ describe('runLogged (real runner, full-stream asserts)', () => {
         String.raw`process.stderr.write("err\n");` +
         'process.exit(7);';
 
-      const failure = await runLogged(
-        run,
-        node,
-        ['-e', code],
-        { cwd },
-        logger,
-      ).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+      const failure = await runLogged(run, node, ['-e', code], { cwd }, logger)
+        .then(() => undefined)
+        .catch((error: unknown) => error);
 
       expect(failure).toMatchObject({ status: 7 });
       expect(stdout()).toBe(`$ ${node} -e ${q(code)}\n`);
+      const escapedNode = node.replaceAll(
+        /[.*+?^${}()|[\]\\]/g,
+        String.raw`\$&`,
+      );
       expect(stderr()).toMatch(
         new RegExp(
-          String.raw`^Command failed: ${node.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)} -e [\s\S]*\nout\nerr\n[\s\S]+$`,
+          String.raw`^Command failed: ${escapedNode} -e [\s\S]*\nout\nerr\n[\s\S]+$`,
         ),
       );
     }),
@@ -176,16 +172,9 @@ describe('runLogged credential redaction', () => {
       const { logger } = captureConsole();
       const u = 'https://u:p@ss@host/x';
       const code = `console.log(${JSON.stringify(u)}); console.error(${JSON.stringify(u)}); process.exit(3)`;
-      const failure = await runLogged(
-        run,
-        node,
-        ['-e', code],
-        { cwd },
-        logger,
-      ).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+      const failure = await runLogged(run, node, ['-e', code], { cwd }, logger)
+        .then(() => undefined)
+        .catch((error: unknown) => error);
       expect(failure).toMatchObject({ status: 3 });
       const text = JSON.stringify(failure, Object.getOwnPropertyNames(failure));
       expect(text).not.toContain('ss@host');
