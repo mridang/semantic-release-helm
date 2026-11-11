@@ -1,3 +1,5 @@
+import { anyUserinfoEnd, maskUserinfo } from './utils/redact.js';
+
 /**
  * A dotted host name or an IPv4 address. A scp-style remote whose host is
  * anything else (an `~/.ssh/config` alias such as `gh-work`, a Windows drive
@@ -5,6 +7,29 @@
  */
 const WEB_HOST =
   /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i;
+
+/**
+ * Remove trailing slashes, and leading ones too when asked. Equivalent to the
+ * `/\/+$/` and `/^\/+|\/+$/g` replacements, but a single linear pass.
+ * @param text - Text that may start or end with slashes.
+ * @param leading - Whether leading slashes are removed as well.
+ * @returns The text without the slashes.
+ * @example
+ * ```ts
+ * trimSlashes('/a/b//', true); // 'a/b'
+ * ```
+ */
+function trimSlashes(text: string, leading: boolean): string {
+  let start = 0;
+  let end = text.length;
+  while (leading && start < end && text.charAt(start) === '/') {
+    start += 1;
+  }
+  while (end > start && text.charAt(end - 1) === '/') {
+    end -= 1;
+  }
+  return text.slice(start, end);
+}
 
 /**
  * The parts of a remote that a web link is built from.
@@ -18,9 +43,8 @@ interface WebParts {
 /**
  * Read an scp-style remote (`[user@]host:path`), accepting only a dotted
  * host name.
- *
- * @param host The text before the colon.
- * @param pathname The text after the colon.
+ * @param host - The text before the colon.
+ * @param pathname - The text after the colon.
  * @returns The parts, or undefined when the host is not a web host.
  */
 function scpParts(host: string, pathname: string): WebParts | undefined {
@@ -32,10 +56,9 @@ function scpParts(host: string, pathname: string): WebParts | undefined {
 
 /**
  * Read a URL remote.
- *
- * @param value The remote.
+ * @param value - The remote.
  * @returns The parts, or undefined when it is not an http, https, ssh or git
- *   URL with a host.
+ * URL with a host.
  */
 function urlParts(value: string): WebParts | undefined {
   if (!URL.canParse(value)) {
@@ -67,7 +90,7 @@ export class RemoteUrl {
   private readonly raw: string;
 
   /**
-   * @param raw The remote URL text.
+   * @param raw - The remote URL text.
    */
   private constructor(raw: string) {
     this.raw = raw.trim();
@@ -76,9 +99,8 @@ export class RemoteUrl {
   /**
    * Wrap the text of a remote URL, such as the output of
    * `git remote get-url`.
-   *
-   * @param text A remote URL: https, http, ssh, git, scp-style or a path.
-   * @returns The remote URL.
+   * @param text - A remote URL: https, http, ssh, git, scp-style or a path.
+   * @returns The URL as it was written, without credentials.
    */
   static parse(text: string): RemoteUrl {
     return new RemoteUrl(text);
@@ -86,12 +108,11 @@ export class RemoteUrl {
 
   /**
    * The public web base of the repository, for building release links.
-   * scp-style remotes are recognised first, as git does, then `https://`,
+   * Scp-style remotes are recognised first, as git does, then `https://`,
    * `http://`, `ssh://` and `git://` URLs. Credentials are dropped. An `http`
    * or `https` remote keeps its port; an ssh or git remote becomes `https` on
    * its host name. Nothing is guessed: local paths, `file://` remotes, drive
-   * letters, ssh aliases and IPv6 literals yield undefined.
-   *
+   * letters, ssh aliases and IPv6 literals yield undefined..
    * @returns A URL such as `https://github.com/owner/repo`, or undefined.
    */
   webBase(): string | undefined {
@@ -102,9 +123,7 @@ export class RemoteUrl {
     if (!parts) {
       return undefined;
     }
-    const repoPath = parts.pathname
-      .replace(/^\/+|\/+$/g, '')
-      .replace(/\.git$/, '');
+    const repoPath = trimSlashes(parts.pathname, true).replace(/\.git$/, '');
     if (repoPath.length === 0) {
       return undefined;
     }
@@ -117,8 +136,7 @@ export class RemoteUrl {
    * host is github.com or is the host of the repository URL semantic-release
    * was configured with; otherwise the configured repository URL is used, and
    * when neither is usable there is no base.
-   *
-   * @param configured `options.repositoryUrl` from semantic-release, if any.
+   * @param configured - `options.repositoryUrl` from semantic-release, if any.
    * @returns A web base, or undefined when links cannot be built reliably.
    */
   releaseBase(configured: RemoteUrl | undefined): string | undefined {
@@ -139,10 +157,9 @@ export class RemoteUrl {
 
   /**
    * The URL with any user and password replaced, safe to log.
-   *
    * @returns The redacted text.
    */
   toString(): string {
-    return this.raw.replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, '$1***@');
+    return maskUserinfo(this.raw, anyUserinfoEnd);
   }
 }
