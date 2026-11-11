@@ -1,0 +1,10 @@
+{
+  "ghes": {
+    "remote": "http://ghes.corp:8080/o/r",
+    "webBase": "http://ghes.corp:8080/o/r"
+  },
+  "internal": {
+    "remote": "http://git.internal:3000/o/r.git",
+    "webBase": "http://git.internal:3000/o/r"
+  }
+}

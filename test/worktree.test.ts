@@ -26,7 +26,7 @@ describe('Worktree with real git', () => {
   it(
     'lists changes, including untracked files',
     withTempDir(async (dir) => {
-      initRepo(dir);
+      await initRepo(dir);
       await writeFile(path.join(dir, 'a.txt'), 'a');
       const { worktree } = real(dir);
       expect(await worktree.changes()).toEqual([
@@ -38,7 +38,7 @@ describe('Worktree with real git', () => {
   it(
     'returns undefined and logs when there is nothing to commit',
     withTempDir(async (dir) => {
-      initRepo(dir);
+      await initRepo(dir);
       const { worktree, lines } = real(dir);
       expect(await worktree.commit('msg', author)).toBeUndefined();
       expect(lines).toContain('gh-pages: no changes to commit');
@@ -48,15 +48,17 @@ describe('Worktree with real git', () => {
   it(
     'stages everything and returns the commit, with the author and message intact',
     withTempDir(async (dir) => {
-      initRepo(dir);
+      await initRepo(dir);
       await writeFile(path.join(dir, 'a.txt'), 'a');
       const { worktree } = real(dir);
       const commit = await worktree.commit('docs: a message [skip ci]', author);
+      const sha = await git(dir, 'rev-parse', 'HEAD');
+      const log = await git(dir, 'log', '-1', '--format=%an|%ae|%s');
       expect(commit).toEqual({
-        sha: git(dir, 'rev-parse', 'HEAD').trim(),
+        sha: sha.trim(),
         message: 'docs: a message [skip ci]',
       });
-      expect(git(dir, 'log', '-1', '--format=%an|%ae|%s').trim()).toBe(
+      expect(log.trim()).toBe(
         'Bot "x"; $(id)|bot@example.test|docs: a message [skip ci]',
       );
     }),
@@ -65,8 +67,8 @@ describe('Worktree with real git', () => {
   it(
     'commits into an unborn branch',
     withTempDir(async (dir) => {
-      initRepo(dir);
-      git(dir, 'checkout', '--orphan', 'pages');
+      await initRepo(dir);
+      await git(dir, 'checkout', '--orphan', 'pages');
       await writeFile(path.join(dir, 'index.yaml'), 'x');
       const commit = await real(dir).worktree.commit('m', author);
       expect(commit?.message).toBe('m');
@@ -85,10 +87,10 @@ describe('Worktree with real git', () => {
   it(
     'removes itself, and says so when there is nothing to remove',
     withTempDir(async (dir) => {
-      initRepo(dir);
-      git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
+      await initRepo(dir);
+      await git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
       const wt = path.join(dir, 'wt');
-      git(dir, 'worktree', 'add', '--quiet', '--detach', wt);
+      await git(dir, 'worktree', 'add', '--quiet', '--detach', wt);
       const { logger } = recordingLogger();
       const tree = new Worktree({
         directory: wt,

@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
@@ -30,10 +30,9 @@ describe('ChartPackage', () => {
 
   it(
     'hashes the file content',
-    withTempDir((dir) => {
+    withTempDir(async (dir) => {
       const file = path.join(dir, 'app-1.0.0.tgz');
-      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
-      fs.writeFileSync(file, 'content');
+      await fs.writeFile(file, 'content');
       expect(ChartPackage.at(file).digest()).toBe(
         crypto.createHash('sha256').update('content').digest('hex'),
       );
@@ -42,15 +41,11 @@ describe('ChartPackage', () => {
 
   it(
     'finds only the .tgz files of a directory',
-    withTempDir((dir) => {
-      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
-      fs.writeFileSync(path.join(dir, 'b-1.0.0.tgz'), 'b');
-      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
-      fs.writeFileSync(path.join(dir, 'a-1.0.0.tgz'), 'a');
-      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
-      fs.writeFileSync(path.join(dir, 'index.yaml'), 'x');
-      // eslint-disable-next-line n/no-sync -- test fixture: sync setup inside withTempDir keeps this spec synchronous, and async would ripple into the shared tmpdir helper
-      fs.mkdirSync(path.join(dir, 'b-2.0.0.tgz'));
+    withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, 'b-1.0.0.tgz'), 'b');
+      await fs.writeFile(path.join(dir, 'a-1.0.0.tgz'), 'a');
+      await fs.writeFile(path.join(dir, 'index.yaml'), 'x');
+      await fs.mkdir(path.join(dir, 'b-2.0.0.tgz'));
       expect(
         ChartPackage.find(path.resolve(dir)).map((p) => p.fileName),
       ).toEqual(['a-1.0.0.tgz', 'b-1.0.0.tgz']);

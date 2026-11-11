@@ -1,5 +1,6 @@
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
+import { pathExists } from './utils/fs.js';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
 import { GitRepository } from '../src/git-repository.js';
@@ -73,8 +74,8 @@ describe('GitRepository with real git', () => {
   it(
     'opens a repository and finds its remote',
     withTempDir(async (dir) => {
-      initRepo(dir);
-      git(dir, 'remote', 'add', 'origin', 'https://github.com/o/r.git');
+      await initRepo(dir);
+      await git(dir, 'remote', 'add', 'origin', 'https://github.com/o/r.git');
       const repository = await open(dir);
       const remote = await repository.remote('origin');
       expect(remote.name).toBe('origin');
@@ -94,14 +95,13 @@ describe('GitRepository with real git', () => {
   it(
     'creates an orphan branch in a path with spaces when none exists',
     withTempDir(async (dir) => {
-      initRepo(dir);
-      git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
+      await initRepo(dir);
+      await git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
       const wt = path.join(dir, 'work tree');
       const repository = await open(dir);
       const worktree = await repository.createWorktree(wt, 'gh-pages');
-      expect(git(wt, 'symbolic-ref', '--short', 'HEAD').trim()).toBe(
-        'gh-pages',
-      );
+      const head = await git(wt, 'symbolic-ref', '--short', 'HEAD');
+      expect(head.trim()).toBe('gh-pages');
       expect(worktree.branch.name).toBe('gh-pages');
     }),
   );
@@ -109,36 +109,37 @@ describe('GitRepository with real git', () => {
   it(
     'reuses an existing local branch',
     withTempDir(async (dir) => {
-      initRepo(dir);
-      git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
-      git(dir, 'branch', 'pages');
+      await initRepo(dir);
+      await git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
+      await git(dir, 'branch', 'pages');
       const wt = path.join(dir, 'wt');
       const repository = await open(dir);
       await repository.createWorktree(wt, 'pages');
-      expect(git(wt, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('pages');
+      const head = await git(wt, 'rev-parse', '--abbrev-ref', 'HEAD');
+      expect(head.trim()).toBe('pages');
     }),
   );
 
   it(
     'prefers the remote branch, and a stale worktree can be removed',
     withTempDir(async (dir) => {
-      initRepo(dir);
-      git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
+      await initRepo(dir);
+      await git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
       const bare = path.join(dir, 'bare.git');
-      git(dir, 'init', '--quiet', '--bare', bare);
-      git(dir, 'remote', 'add', 'origin', bare);
-      git(dir, 'push', '--quiet', 'origin', 'HEAD:refs/heads/pages');
+      await git(dir, 'init', '--quiet', '--bare', bare);
+      await git(dir, 'remote', 'add', 'origin', bare);
+      await git(dir, 'push', '--quiet', 'origin', 'HEAD:refs/heads/pages');
       const repository = await open(dir);
       const remote = await repository.remote('origin');
       const fetched = await remote.fetch('pages');
       expect(fetched).toEqual({ name: 'pages', remote: 'origin' });
       const wt = path.join(dir, 'wt');
       const worktree = await repository.createWorktree(wt, 'pages', fetched);
-      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
-      fs.writeFileSync(path.join(wt, 'f.txt'), 'f');
+      await fs.writeFile(path.join(wt, 'f.txt'), 'f');
       await worktree.commit('m', { name: 'a', email: 'a@b.c' });
       await remote.push(worktree.branch);
-      expect(git(bare, 'log', '-1', '--format=%s', 'pages').trim()).toBe('m');
+      const subject = await git(bare, 'log', '-1', '--format=%s', 'pages');
+      expect(subject.trim()).toBe('m');
       expect(await repository.removeWorktree(wt)).toBe(true);
       expect(await repository.removeWorktree(wt)).toBe(false);
     }),
@@ -148,26 +149,23 @@ describe('GitRepository with real git', () => {
     'finds a remote branch in a single-branch clone',
     withTempDir(async (dir) => {
       const upstream = path.join(dir, 'upstream');
-      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
-      fs.mkdirSync(upstream);
-      initRepo(upstream);
-      git(upstream, 'commit', '--allow-empty', '--quiet', '-m', 'init');
-      git(upstream, 'checkout', '--quiet', '-b', 'pages');
-      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
-      fs.writeFileSync(path.join(upstream, 'index.yaml'), 'entries: {}\n');
-      git(upstream, 'add', '.');
-      git(upstream, 'commit', '--quiet', '-m', 'pages');
-      git(upstream, 'checkout', '--quiet', '-');
+      await fs.mkdir(upstream);
+      await initRepo(upstream);
+      await git(upstream, 'commit', '--allow-empty', '--quiet', '-m', 'init');
+      await git(upstream, 'checkout', '--quiet', '-b', 'pages');
+      await fs.writeFile(path.join(upstream, 'index.yaml'), 'entries: {}\n');
+      await git(upstream, 'add', '.');
+      await git(upstream, 'commit', '--quiet', '-m', 'pages');
+      await git(upstream, 'checkout', '--quiet', '-');
       const clone = path.join(dir, 'clone');
-      git(dir, 'clone', '--quiet', '--single-branch', upstream, clone);
+      await git(dir, 'clone', '--quiet', '--single-branch', upstream, clone);
       const repository = await open(clone);
       const remote = await repository.remote('origin');
       const fetched = await remote.fetch('pages');
       expect(fetched).toEqual({ name: 'pages', remote: 'origin' });
       const wt = path.join(dir, 'wt');
       await repository.createWorktree(wt, 'pages', fetched);
-      // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
-      expect(fs.existsSync(path.join(wt, 'index.yaml'))).toBe(true);
+      expect(await pathExists(path.join(wt, 'index.yaml'))).toBe(true);
     }),
   );
 });

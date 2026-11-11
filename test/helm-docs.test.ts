@@ -1,5 +1,5 @@
 import { expect } from '@jest/globals';
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -45,23 +45,21 @@ test('normalizeReadmeValuesTableContent handles multiple blocks and odd spacing'
   ).toBe(2);
 });
 
-test('normalizeReadmeValuesTableFile returns false when no markers', () => {
-  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'helm-docs-no-markers-'));
+test('normalizeReadmeValuesTableFile returns false when no markers', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'helm-docs-no-markers-'));
   const file = path.join(tmp, 'README.md');
-  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
-  fs.writeFileSync(file, '# nothing here\n', 'utf8');
+  await fs.writeFile(file, '# nothing here\n', 'utf8');
 
   const { changed } = normalizeReadmeValuesTableFile(file);
   expect(changed).toBe(false);
 });
 
-test('normalizeReadmeValuesTableFile updates file in-place when markers exist', () => {
-  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'helm-docs-with-markers-'));
+test('normalizeReadmeValuesTableFile updates file in-place when markers exist', async () => {
+  const tmp = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'helm-docs-with-markers-'),
+  );
   const file = path.join(tmp, 'README.md');
-  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
-  fs.writeFileSync(
+  await fs.writeFile(
     file,
     '<!-- render.chart.valuesTable -->\nsome table\n<!-- end.chart.valuesTable -->\n',
     'utf8',
@@ -70,7 +68,6 @@ test('normalizeReadmeValuesTableFile updates file in-place when markers exist', 
   const { changed } = normalizeReadmeValuesTableFile(file);
   expect(changed).toBe(true);
 
-  // eslint-disable-next-line n/no-sync -- sync is fine in a test helper
-  const after = fs.readFileSync(file, 'utf8');
+  const after = await fs.readFile(file, 'utf8');
   expect(after).toContain(VALUES_TABLE_TEMPLATE);
 });

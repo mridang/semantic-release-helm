@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileAsync } from './exec.js';
 
 /**
  * Run git in a directory and return its output, for building fixtures.
@@ -6,17 +6,20 @@ import { execFileSync } from 'node:child_process';
  * @param args - Arguments after `git`.
  * @returns The standard output.
  */
-export function git(cwd: string, ...args: string[]): string {
-  // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- test helper runs git synchronously from PATH on purpose
-  return execFileSync('git', args, { cwd, encoding: 'utf8' });
+export async function git(cwd: string, ...args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync('git', args, {
+    cwd,
+    encoding: 'utf8',
+  });
+  return stdout;
 }
 
 /**
  * Initialise a repository with a committer identity.
  * @param dir - Directory to initialise.
  */
-export function initRepo(dir: string): void {
-  git(dir, 'init', '--quiet');
-  git(dir, 'config', 'user.name', 'init');
-  git(dir, 'config', 'user.email', 'init@example.test');
+export async function initRepo(dir: string): Promise<void> {
+  await git(dir, 'init', '--quiet');
+  await git(dir, 'config', 'user.name', 'init');
+  await git(dir, 'config', 'user.email', 'init@example.test');
 }
