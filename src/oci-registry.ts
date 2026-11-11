@@ -1,3 +1,6 @@
+/**
+ * @file Pushes packaged Helm charts to an OCI registry.
+ */
 import type { ChartPackage } from './chart-package.js';
 import type { DockerImage } from './docker.js';
 import { quoteWord, shQuote } from './utils/shell.js';
@@ -47,8 +50,8 @@ export class OciRegistry {
   private readonly options: OciRegistryOptions;
 
   /**
-   * @param options Repository, credentials, insecure mode, the Helm image and
-   *   the repository root.
+   * @param options - Repository, credentials, insecure mode, the Helm image and
+   * the repository root.
    */
   constructor(options: OciRegistryOptions) {
     this.options = options;
@@ -58,8 +61,7 @@ export class OciRegistry {
    * Log in when credentials are given, and push a package. The password
    * reaches the container only through its environment, so it appears in no
    * script, command line or log.
-   *
-   * @param pkg The packaged chart.
+   * @param pkg - The packaged chart.
    * @returns The published chart, with the digest Helm printed if any.
    */
   async publish(pkg: ChartPackage): Promise<PublishedChart> {
@@ -76,7 +78,6 @@ export class OciRegistry {
 
   /**
    * The container environment: the password when there is one.
-   *
    * @returns The variables to pass.
    */
   private environment(): Readonly<Record<string, string>> {
@@ -92,8 +93,7 @@ export class OciRegistry {
    * needed there because the steps are chained; every interpolated value is
    * single-quoted when it needs it. The password is read from the
    * environment instead of being written into the script.
-   *
-   * @param pkg The package to push.
+   * @param pkg - The package to push.
    * @returns Commands joined with `&&`.
    */
   private script(pkg: ChartPackage): string {
@@ -108,7 +108,6 @@ export class OciRegistry {
 
   /**
    * The steps that write the insecure registry config for Helm.
-   *
    * @returns The steps, empty unless insecure mode and a host are set.
    */
   private configSteps(): string[] {
@@ -117,15 +116,15 @@ export class OciRegistry {
       return [];
     }
     const configDir = '/root/.config/helm/registry';
+    const auth = `{"auths":{"${hostPort}":{"insecure":true}}}`;
     return [
       `mkdir --parents ${configDir}`,
-      `printf %s ${shQuote(`{"auths":{"${hostPort}":{"insecure":true}}}`)} > ${configDir}/config.json`,
+      `printf %s ${shQuote(auth)} > ${configDir}/config.json`,
     ];
   }
 
   /**
    * The step that logs in, reading the password from the environment.
-   *
    * @returns The step, empty unless a username, password and host are set.
    */
   private loginSteps(): string[] {

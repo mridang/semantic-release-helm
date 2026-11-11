@@ -1,4 +1,7 @@
-import * as fs from 'node:fs';
+/**
+ * @file Entry point that wires semantic-release lifecycle hooks to chart linting, packaging and publishing.
+ */
+import { mkdir } from 'node:fs/promises';
 import SemanticReleaseError from '@semantic-release/error';
 import type {
   PrepareContext,
@@ -27,9 +30,8 @@ const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
 
 /**
  * The Helm and helm-docs images, and the chart, for a configuration.
- *
- * @param cfg Plugin configuration.
- * @param context The step's logger and directory.
+ * @param cfg - Plugin configuration.
+ * @param context - The step's logger and directory.
  * @returns The two images.
  */
 function imagesOf(
@@ -44,15 +46,14 @@ function imagesOf(
 
 /**
  * Open the configured chart.
- *
- * @param cfg Plugin configuration.
- * @param context The step's logger and directory.
- * @returns The chart.
+ * @param cfg - Plugin configuration.
+ * @param context - The step's logger and directory.
+ * @returns The chart configured for this run.
  */
-function chartOf(
+async function chartOf(
   cfg: HelmConfig,
   context: { readonly logger: PublishContext['logger']; readonly cwd: string },
-): Chart {
+): Promise<Chart> {
   return Chart.open({
     ...context,
     directory: cfg.getChartPath(),
@@ -61,7 +62,7 @@ function chartOf(
 }
 
 /**
- * semantic-release `verifyConditions` step. Verifies that:
+ * Semantic-release `verifyConditions` step. Verifies that:
  * - Docker is available,
  * - required Docker images can be pulled,
  * - the Chart.yaml exists at the configured path,
@@ -71,9 +72,8 @@ function chartOf(
  * The method logs the effective Helm/docs images, reports whether GH Pages
  * mode is enabled and the resolved public URL, and rejects incomplete OCI
  * credentials early with a stable error code.
- *
- * @param pluginConfig Plugin configuration supplied by semantic-release.
- * @param context semantic-release context (logger, cwd, etc).
+ * @param pluginConfig - Plugin configuration supplied by semantic-release.
+ * @param context - Semantic-release context (logger, cwd, etc).
  * @throws SemanticReleaseError when a precondition is not satisfied.
  */
 export async function verifyConditions(
@@ -97,14 +97,15 @@ export async function verifyConditions(
   await images.docs.pull();
 
   const chartYamlPath = `${cwd}/${cfg.getChartPath()}/Chart.yaml`;
-  if (!Chart.exists({ cwd, directory: cfg.getChartPath() })) {
+  if (!(await Chart.exists({ cwd, directory: cfg.getChartPath() }))) {
     throw new SemanticReleaseError(
       'Chart.yaml not found.',
       'EMISSINGCHARTYAML',
       `No Chart.yaml found in ${cfg.getChartPath()}.`,
     );
   }
-  chartOf(cfg, here).withVersion('0.0.0');
+  const probe = await chartOf(cfg, here);
+  probe.withVersion('0.0.0');
   logger.log(`verifyConditions: found chart at ${chartYamlPath}`);
 
   if (cfg.isGhEnabled()) {
@@ -140,7 +141,7 @@ export async function verifyConditions(
 }
 
 /**
- * semantic-release `prepare` step. Performs all changes that must be included
+ * Semantic-release `prepare` step. Performs all changes that must be included
  * in the release commit before publishing:
  * - sets the chart version in Chart.yaml to `nextRelease.version`,
  * - lints and templates the chart with Helm to fail early on errors,
@@ -150,9 +151,8 @@ export async function verifyConditions(
  * The function intentionally does not create `index.yaml` in `dist/charts` so
  * tests can assert that merge logic occurs only during the gh-pages publish
  * step.
- *
- * @param pluginConfig Plugin configuration supplied by semantic-release.
- * @param context semantic-release context (cwd, logger, nextRelease).
+ * @param pluginConfig - Plugin configuration supplied by semantic-release.
+ * @param context - Semantic-release context (cwd, logger, nextRelease).
  * @throws SemanticReleaseError if required inputs are missing or invalid.
  */
 export async function prepare(
@@ -175,7 +175,7 @@ export async function prepare(
     );
   }
 
-  if (!Chart.exists({ cwd, directory: cfg.getChartPath() })) {
+  if (!(await Chart.exists({ cwd, directory: cfg.getChartPath() }))) {
     throw new SemanticReleaseError(
       'Chart.yaml missing during prepare.',
       'EMISSINGCHARTYAML',
@@ -183,7 +183,8 @@ export async function prepare(
     );
   }
 
-  const chart = chartOf(cfg, here).withVersion(version).save();
+  const current = await chartOf(cfg, here);
+  const chart = await current.withVersion(version).save();
   logger.log(`prepare: updated Chart.yaml to version ${version}`);
 
   await chart.lint();
@@ -191,9 +192,7 @@ export async function prepare(
   await chart.document(cfg.getDocsArgs());
 
   const outDir = `${cwd}/dist/charts`;
-  if (!fs.existsSync(outDir)) {
-    fs.mkdirSync(outDir, { recursive: true });
-  }
+  await mkdir(outDir, { recursive: true });
   await chart.package('dist/charts');
   logger.log('prepare: packaged chart(s) into dist/charts');
 
@@ -202,10 +201,9 @@ export async function prepare(
 
 /**
  * Push the packages to the configured OCI registry, one after the other.
- *
- * @param cfg Plugin configuration.
- * @param context The step's logger and directory.
- * @param packages The packages to push.
+ * @param cfg - Plugin configuration.
+ * @param context - The step's logger and directory.
+ * @param packages - The packages to push.
  */
 async function publishToOci(
   cfg: HelmConfig,
@@ -242,7 +240,7 @@ async function publishToOci(
 }
 
 /**
- * semantic-release `publish` step. Publishes the packaged chart(s) to:
+ * Semantic-release `publish` step. Publishes the packaged chart(s) to:
  * - an OCI registry (optional), and/or
  * - a GitHub Pages branch (default).
  *
@@ -264,23 +262,22 @@ async function publishToOci(
  *
  * The remote-first worktree creation avoids non-fast-forward push failures when
  * a remote `gh-pages` already exists with history.
- *
- * @param pluginConfig Plugin configuration supplied by semantic-release.
- * @param context semantic-release context (cwd, logger).
+ * @param pluginConfig - Plugin configuration supplied by semantic-release.
+ * @param context - Semantic-release context (cwd, logger).
  * @throws SemanticReleaseError if no packaged charts are present.
  */
 export async function publish(
   pluginConfig: HelmPluginConfig,
   context: PublishContext,
 ): Promise<void> {
-  const { logger } = context;
+  const { logger, options, nextRelease } = context;
   const cwd = context.cwd ?? process.cwd();
   const cfg = new HelmConfig(pluginConfig);
   const here = { logger, cwd };
 
   logger.log('publish: starting');
 
-  const found = ChartPackage.find(`${cwd}/dist/charts`);
+  const found = await ChartPackage.find(`${cwd}/dist/charts`);
   if (found.length === 0) {
     throw new SemanticReleaseError(
       'No packaged chart found.',
@@ -289,7 +286,7 @@ export async function publish(
     );
   }
 
-  const chart = cfg.isGhEnabled() ? chartOf(cfg, here) : undefined;
+  const chart = cfg.isGhEnabled() ? await chartOf(cfg, here) : undefined;
   const packages = chart ? chart.select(found) : found;
   if (packages.length === 0) {
     throw new SemanticReleaseError(
@@ -311,7 +308,7 @@ export async function publish(
         remote: cfg.getGhRepo(),
         branch: cfg.getGhBranch(),
         url: cfg.getGhUrl(),
-        repositoryUrl: context.options?.repositoryUrl,
+        repositoryUrl: options?.repositoryUrl,
       })
     : undefined;
 
@@ -322,7 +319,7 @@ export async function publish(
     if (ghPlan) {
       await publishGhPages(here, ghPlan, {
         packages,
-        tag: context.nextRelease?.gitTag,
+        tag: nextRelease?.gitTag,
         author: {
           name: process.env.GIT_AUTHOR_NAME || COMMIT_NAME,
           email: process.env.GIT_AUTHOR_EMAIL || COMMIT_EMAIL,
