@@ -18,7 +18,8 @@ import {
   verifyGhPages,
 } from './gh-pages.js';
 import { OciRegistry } from './oci-registry.js';
-import { HelmConfig, HelmPluginConfig } from './plugin-config.js';
+import type { HelmPluginConfig } from './plugin-config.js';
+import { HelmConfig } from './plugin-config.js';
 import { redactCredentials } from './utils/redact.js';
 
 export type { ChartYaml } from './chart.js';
@@ -112,7 +113,7 @@ export async function verifyConditions(
     const url = cfg.getGhUrl();
     logger.log(
       `verifyConditions: GH Pages mode (default). Resolved URL: ` +
-        `${url ?? '(none; index will be written without --url)'}`,
+        (url ?? '(none; index will be written without --url)'),
     );
     await verifyGhPages(here, cfg.getGhRepo());
     logger.log(

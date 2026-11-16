@@ -124,7 +124,7 @@ export async function runLogged(
       logCaptured(redactCredentials(stringAt(safe, 'stdout') ?? ''), logger);
       logCaptured(redactCredentials(stringAt(safe, 'stderr') ?? ''), logger);
       if (safe.message) {
-        logger.error(redactCredentials(String(safe.message)));
+        logger.error(redactCredentials(safe.message));
       }
     }
     throw safe;

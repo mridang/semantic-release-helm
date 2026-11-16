@@ -3,6 +3,7 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { inspect } from 'node:util';
 import SemanticReleaseError from '@semantic-release/error';
 import yaml from 'yaml';
 import type { CommandContext } from './command-runner.js';
@@ -69,13 +70,24 @@ function parseChartYaml(text: string, file: string): unknown {
 function readFields(text: string, file: string): ChartYaml {
   const parsed = parseChartYaml(text, file);
   const record = isRecord(parsed) ? parsed : {};
+  const { name, version, apiVersion } = record;
+  let nameText = '';
+  if (typeof name === 'string') {
+    nameText = name;
+  } else if (name !== undefined && name !== null) {
+    nameText = inspect(name);
+  } else {
+    // No name: it stays empty and is reported where the chart is validated.
+  }
   return {
     ...record,
-    name:
-      typeof record.name === 'string' ? record.name : String(record.name ?? ''),
-    ...(record.version !== undefined && { version: String(record.version) }),
-    ...(record.apiVersion !== undefined && {
-      apiVersion: String(record.apiVersion),
+    name: nameText,
+    ...(version !== undefined && {
+      version: typeof version === 'string' ? version : inspect(version),
+    }),
+    ...(apiVersion !== undefined && {
+      apiVersion:
+        typeof apiVersion === 'string' ? apiVersion : inspect(apiVersion),
     }),
   };
 }
@@ -301,7 +313,7 @@ export class Chart {
    * @returns The name, or an empty string when Chart.yaml has none.
    */
   name(): string {
-    return String(this.fields.name ?? '');
+    return this.fields.name;
   }
 
   /**
@@ -312,7 +324,7 @@ export class Chart {
     if (this.fields.version === undefined) {
       return undefined;
     }
-    return String(this.fields.version);
+    return this.fields.version;
   }
 
   /**
@@ -323,7 +335,7 @@ export class Chart {
     if (this.fields.apiVersion === undefined) {
       return undefined;
     }
-    return String(this.fields.apiVersion);
+    return this.fields.apiVersion;
   }
 
   /**

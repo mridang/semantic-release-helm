@@ -198,7 +198,7 @@ describe('DockerImage.run', () => {
       .then(() => undefined)
       .catch((error: unknown) => error);
     expect(lines.join('\n')).not.toContain('tok3nvalue');
-    expect(String((failure as Error).message)).not.toContain('tok3nvalue');
+    expect((failure as Error).message).not.toContain('tok3nvalue');
   });
 
   it('with env keeps short values from mangling the message', async () => {
@@ -252,12 +252,10 @@ describe('DockerImage.run', () => {
       .run(['true'], { env: { OCI_PASSWORD: 'sec\u0000ret' } })
       .then(() => undefined)
       .catch((error: unknown) => error);
-    expect(String((failure as Error).message)).toContain(
-      '(ERR_INVALID_ARG_VALUE)',
+    expect((failure as Error).message).toContain('(ERR_INVALID_ARG_VALUE)');
+    expect([...lines, (failure as Error).message].join('\n')).not.toContain(
+      'sec',
     );
-    expect(
-      [...lines, String((failure as Error).message)].join('\n'),
-    ).not.toContain('sec');
   });
 
   it('with env scrubs the value from the output of a successful run', async () => {

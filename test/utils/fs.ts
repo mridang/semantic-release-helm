@@ -1,7 +1,7 @@
 import { access, copyFile, mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 
-export const pathExists = (path: string): Promise<boolean> =>
+export const pathExists = async (path: string): Promise<boolean> =>
   access(path)
     .then(() => true)
     .catch(() => false);

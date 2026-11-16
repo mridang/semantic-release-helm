@@ -111,7 +111,7 @@ export class ExecError extends Error {
  * const branch = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: '/repo' });
  * ```
  */
-export const run: Runner = (file, args, options = {}) =>
+export const run: Runner = async (file, args, options = {}) =>
   new Promise((resolve, reject) => {
     const child = execFile(
       file,

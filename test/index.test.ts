@@ -23,7 +23,7 @@ import type {
   PrepareContext,
   PublishContext,
 } from 'semantic-release';
-import { HelmPluginConfig } from '../src/plugin-config.js';
+import type { HelmPluginConfig } from '../src/plugin-config.js';
 
 /** Locale-aware comparer, built once. */
 const collator = new Intl.Collator();
@@ -1070,11 +1070,18 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
         'git show gh-pages:index.yaml',
         { cwd: w.remote },
       );
-      const index = parse(indexYaml);
-      expect(index.entries.app).toHaveLength(1);
-      expect(index.entries.app[0].urls).toEqual([
-        'https://github.com/o/r/releases/download/v1.0.0/app-1.0.0.tgz',
-      ]);
+      const index: unknown = parse(indexYaml);
+      expect(index).toMatchObject({
+        entries: {
+          app: [
+            {
+              urls: [
+                'https://github.com/o/r/releases/download/v1.0.0/app-1.0.0.tgz',
+              ],
+            },
+          ],
+        },
+      });
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
