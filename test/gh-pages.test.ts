@@ -14,7 +14,7 @@ import {
 } from '../src/gh-pages.js';
 import { git } from './utils/git.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
-import { withTempDir } from './utils/tmpdir.js';
+import { withTemporaryDir } from './utils/tmpdir.js';
 
 /**
  * A repository with a chart, one packaged chart, and a bare remote named
@@ -89,7 +89,7 @@ const settings = (chart: Chart, repositoryUrl?: string, url?: string) => ({
 describe('verifyGhPages', () => {
   it(
     'returns the remote when it can be reached',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       const { context } = await setup(s.repo);
       const remote = await verifyGhPages(context, 'origin');
@@ -99,7 +99,7 @@ describe('verifyGhPages', () => {
 
   it(
     'maps an unreachable remote to EREMOTEACCESS',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       await git(
         s.repo,
@@ -117,7 +117,7 @@ describe('verifyGhPages', () => {
 
   it(
     'maps a missing remote to ENOREMOTE and a non-repository to ENOTGITREPO',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       const { context } = await setup(s.repo);
       await expect(verifyGhPages(context, 'nope')).rejects.toMatchObject({
@@ -134,7 +134,7 @@ describe('verifyGhPages', () => {
 describe('planGhPages and publishGhPages', () => {
   it(
     'refuses a malformed index before anything is published',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       await seedPages(s.repo, 'entries: []\n');
       const { context, chart } = await setup(s.repo);
@@ -148,7 +148,7 @@ describe('planGhPages and publishGhPages', () => {
 
   it(
     'publishes the index with release links from the repository URL and cleans up',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       const { context, chart } = await setup(s.repo);
       const plan = await planGhPages(
@@ -172,7 +172,7 @@ describe('planGhPages and publishGhPages', () => {
 
   it(
     'uses the bare file name when no link base can be trusted',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       const { context, chart } = await setup(s.repo);
       const plan = await planGhPages(context, settings(chart));
@@ -190,7 +190,7 @@ describe('planGhPages and publishGhPages', () => {
 
   it(
     'merges into an existing index and keeps earlier versions',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       await seedPages(
         s.repo,
@@ -210,14 +210,16 @@ describe('planGhPages and publishGhPages', () => {
         await git(s.remote, 'show', 'gh-pages:index.yaml'),
       );
       expect(
-        index.entries.app.map((e: { version: string }) => e.version),
+        index.entries.app.map(
+          (candidate: { version: string }) => candidate.version,
+        ),
       ).toEqual(['1.0.0', '0.9.0']);
     }),
   );
 
   it(
     'removes a leftover worktree from an earlier run',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       const { context, chart } = await setup(s.repo);
       await planGhPages(context, settings(chart));
@@ -230,7 +232,7 @@ describe('planGhPages and publishGhPages', () => {
 
   it(
     'uses the release tag it is given, not one derived from the file name',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       const { context, chart } = await setup(s.repo);
       const plan = await planGhPages(
@@ -253,7 +255,7 @@ describe('planGhPages and publishGhPages', () => {
 
   it(
     'writes absolute links from ghPages.url when it is set',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       const { context, chart } = await setup(s.repo);
       const plan = await planGhPages(
@@ -280,7 +282,7 @@ describe('planGhPages and publishGhPages', () => {
 
   it(
     'warns when release links cannot be built',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       const { context, chart, lines } = await setup(s.repo);
       await planGhPages(context, settings(chart));
@@ -292,7 +294,7 @@ describe('planGhPages and publishGhPages', () => {
 
   it(
     'removes the working tree when the index is refused',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       await seedPages(s.repo, 'entries: []\n');
       const { context, chart } = await setup(s.repo);
@@ -306,7 +308,7 @@ describe('planGhPages and publishGhPages', () => {
 
   it(
     'abandoning a plan removes the working tree',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const s = await scenario(base);
       const { context, chart } = await setup(s.repo);
       const plan = await planGhPages(context, settings(chart));

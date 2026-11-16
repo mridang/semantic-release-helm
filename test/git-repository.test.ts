@@ -6,7 +6,7 @@ import { describe, expect, it } from '@jest/globals';
 import { GitRepository } from '../src/git-repository.js';
 import { git, initRepo } from './utils/git.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
-import { withTempDir } from './utils/tmpdir.js';
+import { withTemporaryDir } from './utils/tmpdir.js';
 
 const fails = () => {
   throw new Error('nope');
@@ -73,7 +73,7 @@ describe('GitRepository with real git', () => {
 
   it(
     'opens a repository and finds its remote',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await initRepo(dir);
       await git(dir, 'remote', 'add', 'origin', 'https://github.com/o/r.git');
       const repository = await open(dir);
@@ -87,14 +87,14 @@ describe('GitRepository with real git', () => {
 
   it(
     'refuses a directory that is not a repository',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await expect(open(dir)).rejects.toMatchObject({ code: 'ENOTGITREPO' });
     }),
   );
 
   it(
     'creates an orphan branch in a path with spaces when none exists',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await initRepo(dir);
       await git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
       const wt = path.join(dir, 'work tree');
@@ -108,7 +108,7 @@ describe('GitRepository with real git', () => {
 
   it(
     'reuses an existing local branch',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await initRepo(dir);
       await git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
       await git(dir, 'branch', 'pages');
@@ -122,7 +122,7 @@ describe('GitRepository with real git', () => {
 
   it(
     'prefers the remote branch, and a stale worktree can be removed',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await initRepo(dir);
       await git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
       const bare = path.join(dir, 'bare.git');
@@ -147,7 +147,7 @@ describe('GitRepository with real git', () => {
 
   it(
     'finds a remote branch in a single-branch clone',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       const upstream = path.join(dir, 'upstream');
       await fs.mkdir(upstream);
       await initRepo(upstream);

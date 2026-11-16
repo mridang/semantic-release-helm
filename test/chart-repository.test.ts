@@ -7,7 +7,7 @@ import { ChartRepository, ChartEntry } from '../src/chart-repository.js';
 import { DockerImage } from '../src/docker.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
-import { withTempDir } from './utils/tmpdir.js';
+import { withTemporaryDir } from './utils/tmpdir.js';
 import { sha256OfFile } from './utils/filehash.js';
 
 /** A chart in a directory, with images that are never run. */
@@ -53,14 +53,14 @@ async function writeChartYaml(
   const chartDir = path.join(dir, 'charts', name);
   await fs.mkdir(chartDir, { recursive: true });
   const chartFile = path.join(chartDir, 'Chart.yaml');
-  const doc = yaml.stringify({
+  const chartYaml = yaml.stringify({
     apiVersion: 'v2',
     name,
     version,
     description: 'X',
     ...extra,
   });
-  await fs.writeFile(chartFile, doc, 'utf8');
+  await fs.writeFile(chartFile, chartYaml, 'utf8');
   return chartDir;
 }
 
@@ -76,14 +76,16 @@ async function writeTgz(
   return tgz;
 }
 
-interface ChartRepositoryDoc {
+interface ChartRepositoryDocument {
   apiVersion: 'v1';
   entries: Record<string, ChartEntry[]>;
   generated?: string;
 }
 
-async function readIndex(idxPath: string): Promise<ChartRepositoryDoc> {
-  return yaml.parse(await fs.readFile(idxPath, 'utf8')) as ChartRepositoryDoc;
+async function readIndex(idxPath: string): Promise<ChartRepositoryDocument> {
+  return yaml.parse(
+    await fs.readFile(idxPath, 'utf8'),
+  ) as ChartRepositoryDocument;
 }
 
 beforeAll(() => {
@@ -102,7 +104,7 @@ describe('ChartRepository', () => {
    */
   it(
     'initializes empty index on first write',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
       await saveAt(path.dirname(idxPath));
       expect(await readIndex(idxPath)).toEqual({
@@ -118,7 +120,7 @@ describe('ChartRepository', () => {
    */
   it(
     'appends versions and keeps newest first',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
       const c100 = await chartAt(await writeChartYaml(base, 'dummy', '1.0.0'));
       const t100 = await writeTgz(base, 'dummy', '1.0.0', 'a');
@@ -177,7 +179,7 @@ describe('ChartRepository', () => {
    */
   it(
     'replaces same version without duplication',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
       const chart = await chartAt(await writeChartYaml(base, 'demo', '2.0.0'));
 
@@ -223,7 +225,7 @@ describe('ChartRepository', () => {
    */
   it(
     'sorts entries by semver descending',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
       const c100 = await chartAt(await writeChartYaml(base, 'svc', '1.0.0'));
       const t100 = await writeTgz(base, 'svc', '1.0.0', 'x');
@@ -278,7 +280,7 @@ describe('ChartRepository', () => {
    */
   it(
     'writes absolute or relative urls',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
       const chart = await chartAt(await writeChartYaml(base, 'web', '3.1.4'));
       const tgz = await writeTgz(base, 'web', '3.1.4', 'content');
@@ -332,7 +334,7 @@ describe('ChartRepository metadata and persistence', () => {
    */
   it(
     'passes metadata and coerces appVersion',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
       const chart = await chartAt(
         await writeChartYaml(base, 'api', '0.9.0', {
@@ -387,7 +389,7 @@ describe('ChartRepository metadata and persistence', () => {
    */
   it(
     'denylists computed fields from override',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
       const chart = await chartAt(
         await writeChartYaml(base, 'svc', '7.7.7', {
@@ -431,7 +433,7 @@ describe('ChartRepository metadata and persistence', () => {
    */
   it(
     'writes generated and stays idempotent',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
       const chart = await chartAt(await writeChartYaml(base, 'clock', '1.0.0'));
       const tgz = await writeTgz(base, 'clock', '1.0.0', 't');
@@ -467,7 +469,7 @@ describe('ChartRepository metadata and persistence', () => {
 describe('ChartRepository load, append and write of unusual index.yaml content', () => {
   it(
     'keeps unknown top-level keys, odd items and non-list chart keys through append',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const file = path.join(base, 'index.yaml');
       await fs.writeFile(
         file,
@@ -486,17 +488,17 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
       const tgz = await writeTgz(base, 'demo', '1.0.0', 'x');
       const out = path.join(base, 'index.yaml');
       await addAndSave(path.dirname(file), chart, ChartPackage.at(tgz), '');
-      const doc = yaml.parse(await fs.readFile(out, 'utf8'));
-      expect(doc.apiVersion).toBe('v1');
-      expect(doc.annotations).toEqual({ team: 'platform' });
-      expect(doc.entries.other).toEqual([
+      const parsedIndex = yaml.parse(await fs.readFile(out, 'utf8'));
+      expect(parsedIndex.apiVersion).toBe('v1');
+      expect(parsedIndex.annotations).toEqual({ team: 'platform' });
+      expect(parsedIndex.entries.other).toEqual([
         { name: 'other', version: 2 },
         'junk',
         null,
       ]);
-      expect(doc.entries.nul).toBeNull();
-      expect(doc.entries.mapping).toEqual({ a: 1 });
-      expect(doc.entries.demo).toHaveLength(1);
+      expect(parsedIndex.entries.nul).toBeNull();
+      expect(parsedIndex.entries.mapping).toEqual({ a: 1 });
+      expect(parsedIndex.entries.demo).toHaveLength(1);
     }),
   );
 
@@ -504,7 +506,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
     ['a mapping', 'entries:\n  demo:\n    a: 1\n'],
     ['a scalar', 'entries:\n  demo: nope\n'],
   ])('refuses to append over a chart key that is %s', (_label, content) =>
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const file = path.join(base, 'index.yaml');
       await fs.writeFile(file, content, 'utf8');
       const chart = await chartAt(await writeChartYaml(base, 'demo', '1.0.0'));
@@ -521,7 +523,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
     ['absent', 'apiVersion: v1\n'],
     ['a null chart key', 'entries:\n  demo: null\n'],
   ])('treats %s as empty', (_label, content) =>
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const file = path.join(base, 'index.yaml');
       await fs.writeFile(file, content, 'utf8');
       const chart = await chartAt(await writeChartYaml(base, 'demo', '1.0.0'));
@@ -537,7 +539,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
     ['a list', 'entries:\n  - a\n'],
     ['a string', 'entries: nope\n'],
   ])('refuses an index whose entries is %s', (_label, content) =>
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const file = path.join(base, 'index.yaml');
       await fs.writeFile(file, content, 'utf8');
       await expect(ChartRepository.open(path.dirname(file))).rejects.toThrow(
@@ -548,7 +550,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
 
   it(
     'yields an empty index for an empty file',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const file = path.join(base, 'index.yaml');
       const out = path.join(base, 'index.yaml');
       await fs.writeFile(file, '', 'utf8');
@@ -559,7 +561,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
 
   it(
     'refuses to replace an index that is not a mapping',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const file = path.join(base, 'index.yaml');
       await fs.writeFile(file, '- a\n- b\n', 'utf8');
       await expect(ChartRepository.open(path.dirname(file))).rejects.toThrow(
@@ -572,7 +574,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
 describe('ChartRepository.append with unusual chart names', () => {
   it(
     'handles a chart named after an Object.prototype member',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const chart = await chartAt(
         await writeChartYaml(base, 'constructor', '1.0.0'),
       );
@@ -581,7 +583,9 @@ describe('ChartRepository.append with unusual chart names', () => {
       await addAndSave(path.dirname(out), chart, ChartPackage.at(tgz), '');
       const written = yaml.parse(await fs.readFile(out, 'utf8'));
       expect(
-        written.entries.constructor.map((e: ChartEntry) => e.version),
+        written.entries.constructor.map(
+          (candidate: ChartEntry) => candidate.version,
+        ),
       ).toEqual(['1.0.0']);
     }),
   );
@@ -590,7 +594,7 @@ describe('ChartRepository.append with unusual chart names', () => {
 describe('ChartRepository key order', () => {
   it(
     'writes apiVersion, entries, other keys, then generated',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const file = path.join(base, 'index.yaml');
       await fs.writeFile(
         file,
@@ -617,7 +621,7 @@ describe('ChartRepository YAML handling', () => {
    */
   it(
     'strips every trailing slash from the base URL',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
       const chart = await chartAt(
         await writeChartYaml(base, 'slashy', '1.0.0'),
@@ -639,7 +643,7 @@ describe('ChartRepository YAML handling', () => {
 
   it(
     'turns a YAML syntax error into a coded error that names the file',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const file = path.join(base, 'index.yaml');
       await fs.writeFile(file, 'a: 1\n---\nb: 2\n', 'utf8');
       await expect(ChartRepository.open(path.dirname(file))).rejects.toThrow(
@@ -653,7 +657,7 @@ describe('ChartRepository YAML handling', () => {
 
   it(
     'writes long descriptions on one line, like Chart.yaml',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const description = 'word '.repeat(40).trim();
       const chart = await chartAt(
         await writeChartYaml(base, 'demo', '1.0.0', { description }),

@@ -11,6 +11,8 @@
  * @param text - Text that may contain credentials.
  * @returns The text with every credential replaced by `***`.
  */
+const URL_BOUNDARY_CHARACTERS = /[\s/@]/;
+
 export function redactCredentials(text: string): string {
   return maskUserinfo(
     maskUserinfo(text, passwordUserinfoEnds()),
@@ -42,8 +44,8 @@ const WHITESPACE = /\s/;
  */
 function hasSchemeBefore(text: string, index: number): boolean {
   let found = false;
-  for (let i = index - 1; i >= 0; i -= 1) {
-    const char = text.charAt(i);
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const char = text.charAt(cursor);
     if (!SCHEME_CHAR.test(char)) {
       break;
     }
@@ -97,11 +99,14 @@ export function maskUserinfo(
  * @returns The index after the `@`, or -1.
  */
 export function anyUserinfoEnd(text: string, from: number): number {
-  let i = from;
-  while (i < text.length && !/[\s/@]/.test(text.charAt(i))) {
-    i += 1;
+  let index = from;
+  while (
+    index < text.length &&
+    !URL_BOUNDARY_CHARACTERS.test(text.charAt(index))
+  ) {
+    index += 1;
   }
-  return text.charAt(i) === '@' ? i + 1 : -1;
+  return text.charAt(index) === '@' ? index + 1 : -1;
 }
 
 /**
@@ -111,11 +116,11 @@ export function anyUserinfoEnd(text: string, from: number): number {
  * @returns The index after the `@`, or -1.
  */
 function tokenUserinfoEnd(text: string, from: number): number {
-  let i = from;
-  while (i < text.length && !SEPARATOR.test(text.charAt(i))) {
-    i += 1;
+  let index = from;
+  while (index < text.length && !SEPARATOR.test(text.charAt(index))) {
+    index += 1;
   }
-  return i > from && text.charAt(i) === '@' ? i + 1 : -1;
+  return index > from && text.charAt(index) === '@' ? index + 1 : -1;
 }
 
 /**
@@ -128,14 +133,14 @@ function passwordUserinfoEnds(): (text: string, from: number) => number {
   let runEnd = -1;
   let lastAt = -1;
   return (text, from) => {
-    let i = from;
-    while (i < text.length && !SEPARATOR.test(text.charAt(i))) {
-      i += 1;
+    let index = from;
+    while (index < text.length && !SEPARATOR.test(text.charAt(index))) {
+      index += 1;
     }
-    if (text.charAt(i) !== ':') {
+    if (text.charAt(index) !== ':') {
       return -1;
     }
-    const start = i + 1;
+    const start = index + 1;
     if (start >= runEnd) {
       runEnd = start;
       while (runEnd < text.length && !WHITESPACE.test(text.charAt(runEnd))) {

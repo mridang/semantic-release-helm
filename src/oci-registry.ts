@@ -8,6 +8,8 @@ import { quoteWord, shQuote } from './utils/shell.js';
 /**
  * A chart that was pushed to a registry.
  */
+const DIGEST_LINE = /Digest:\s*(sha256:[0-9a-f]+)/i;
+
 export interface PublishedChart {
   /** The repository it was pushed to, such as `oci://registry/charts`. */
   readonly reference: string;
@@ -72,7 +74,7 @@ export class OciRegistry {
     return {
       reference: this.options.repo,
       package: pkg,
-      digest: /Digest:\s*(sha256:[0-9a-f]+)/i.exec(output)?.[1],
+      digest: DIGEST_LINE.exec(output)?.[1],
     };
   }
 

@@ -13,6 +13,11 @@ import path from 'node:path';
 /**
  * The chart name and version a package was made from.
  */
+/** Locale-aware comparer, built once. */
+const collator = new Intl.Collator();
+const OPTIONAL_VERSION_TGZ_SUFFIX = /(-\d+\.\d+\.\d+)?\.tgz$/;
+const VERSION_TGZ_SUFFIX = /-(\d+\.\d+\.\d+)\.tgz$/;
+
 interface ChartIdentity {
   readonly name: string;
   readonly version: string;
@@ -89,7 +94,7 @@ export class ChartPackage {
     return entries
       .filter((entry) => entry.isFile() && entry.name.endsWith('.tgz'))
       .map((entry) => entry.name)
-      .toSorted((a, b) => a.localeCompare(b))
+      .toSorted((a, b) => collator.compare(a, b))
       .map((name) => new ChartPackage(path.join(directory, name)));
   }
 
@@ -102,7 +107,7 @@ export class ChartPackage {
     if (this.identity) {
       return this.identity.name;
     }
-    return this.fileName.replace(/(-\d+\.\d+\.\d+)?\.tgz$/, '');
+    return this.fileName.replace(OPTIONAL_VERSION_TGZ_SUFFIX, '');
   }
 
   /**
@@ -122,7 +127,7 @@ export class ChartPackage {
     if (this.identity) {
       return this.identity.version;
     }
-    return /-(\d+\.\d+\.\d+)\.tgz$/.exec(this.fileName)?.[1] ?? '0.0.0';
+    return VERSION_TGZ_SUFFIX.exec(this.fileName)?.[1] ?? '0.0.0';
   }
 
   /**

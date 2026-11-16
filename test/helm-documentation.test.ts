@@ -6,7 +6,7 @@ import {
   normalizeReadmeValuesTableContent,
   normalizeReadmeValuesTableFile,
   VALUES_TABLE_TEMPLATE,
-} from '../src/helm-docs.js';
+} from '../src/helm-documentation.js';
 
 test('normalizeReadmeValuesTableContent replaces inner content and preserves sentinels', () => {
   const before = [

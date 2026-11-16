@@ -8,7 +8,7 @@ import yaml from 'yaml';
 import type { CommandContext } from './command-runner.js';
 import { ChartPackage } from './chart-package.js';
 import type { DockerImage } from './docker.js';
-import { normalizeReadmeValuesTableFile } from './helm-docs.js';
+import { normalizeReadmeValuesTableFile } from './helm-documentation.js';
 import { messageOf } from './utils/error.js';
 import { isRecord } from './utils/object.js';
 
@@ -17,6 +17,9 @@ import { isRecord } from './utils/object.js';
  * minimal subset is typed explicitly to avoid needless churn when Helm adds
  * new fields.
  */
+const WHITESPACE = /\s/;
+const TRAILING_NEWLINE = /\r?\n$/;
+
 export interface ChartYaml {
   apiVersion?: string;
   name: string;
@@ -133,7 +136,7 @@ function escapeForRegExp(text: string): string {
  * @returns The text to insert.
  */
 function blankValue(text: string, at: number, scalar: string): string {
-  const before = /\s/.test(text.charAt(at - 1)) ? '' : ' ';
+  const before = WHITESPACE.test(text.charAt(at - 1)) ? '' : ' ';
   const after = text.charAt(at) === '#' ? ' ' : '';
   return `${before}${scalar}${after}`;
 }
@@ -144,7 +147,7 @@ function blankValue(text: string, at: number, scalar: string): string {
  * @param style - The style of the existing node.
  * @returns Source text for the scalar.
  */
-function versionScalar(version: string, style: string | undefined): string {
+function versionScalar(version: string, style?: string): string {
   if (style === 'QUOTE_DOUBLE') {
     return JSON.stringify(version);
   }
@@ -177,29 +180,29 @@ export function setChartVersion(
 ): string {
   const refuse = (message: string, details: string): SemanticReleaseError =>
     new SemanticReleaseError(message, 'EINVALIDCHARTYAML', details);
-  const doc = yaml.parseDocument(rawYaml);
-  const [parseError] = doc.errors;
+  const yamlDocument = yaml.parseDocument(rawYaml);
+  const [parseError] = yamlDocument.errors;
   if (parseError) {
     throw refuse(
       `${file} is not valid YAML.`,
       `${file}: ${parseError.message}`,
     );
   }
-  if (!yaml.isMap(doc.contents)) {
+  if (!yaml.isMap(yamlDocument.contents)) {
     throw refuse(
       `${file} is not a YAML mapping.`,
       `${file} must be a mapping with at least a name and a version.`,
     );
   }
-  const existing = doc.get('version', true);
+  const existing = yamlDocument.get('version', true);
   if (existing === undefined) {
     const eol = rawYaml.includes('\r\n') ? '\r\n' : '\n';
-    if (doc.contents.flow) {
-      doc.set('version', version);
-      return doc.toString({ lineWidth: 0 });
+    if (yamlDocument.contents.flow) {
+      yamlDocument.set('version', version);
+      return yamlDocument.toString({ lineWidth: 0 });
     }
-    const body = /\r?\n$/.test(rawYaml) ? rawYaml : `${rawYaml}${eol}`;
-    return `${body}version: ${versionScalar(version, undefined)}${eol}`;
+    const body = TRAILING_NEWLINE.test(rawYaml) ? rawYaml : `${rawYaml}${eol}`;
+    return `${body}version: ${versionScalar(version)}${eol}`;
   }
   if (!yaml.isScalar(existing) || !existing.range) {
     throw refuse(

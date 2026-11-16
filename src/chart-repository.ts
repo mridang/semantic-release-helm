@@ -106,7 +106,7 @@ function parseIndex(text: string, file: string): unknown {
 
 /**
  * The members of a document other than the named ones, in their original order.
- * @param doc - The document.
+ * @param record - The document.
  * @param omit - Keys to leave out.
  * @returns The remaining members.
  * @example
@@ -116,11 +116,11 @@ function parseIndex(text: string, file: string): unknown {
  * ```
  */
 function without(
-  doc: Readonly<Record<string, unknown>>,
+  record: Readonly<Record<string, unknown>>,
   omit: readonly string[],
 ): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(doc).filter(([key]) => !omit.includes(key)),
+    Object.entries(record).filter(([key]) => !omit.includes(key)),
   );
 }
 
@@ -264,7 +264,11 @@ export class ChartRepository {
       ? previous
       : [];
     const kept = existing.filter(
-      (e) => !(isRecord(e) && String(e.version) === String(entry.version)),
+      (candidate) =>
+        !(
+          isRecord(candidate) &&
+          String(candidate.version) === String(entry.version)
+        ),
     );
 
     return new ChartRepository(

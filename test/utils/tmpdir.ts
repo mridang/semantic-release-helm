@@ -10,7 +10,7 @@ import os from 'node:os';
  * @param prefix - Directory name prefix, e.g. "sr-".
  * @returns Absolute path to the created temporary directory.
  */
-async function makeTempDir(prefix = 'sr-'): Promise<string> {
+async function makeTemporaryDir(prefix = 'sr-'): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), prefix));
 }
 
@@ -21,18 +21,18 @@ async function makeTempDir(prefix = 'sr-'): Promise<string> {
  *
  * Usage with Jest (ESM):.
  * ```ts
- * it('does something', withTempDir(async (base) => {
+ * it('does something', withTemporaryDir(async (base) => {
  *   // use base here
  * }));
  * ```
  * @param fn - Test body that receives the temp directory path.
  * @returns A zero-arg async function suitable for a test runner.
  */
-export function withTempDir(
+export function withTemporaryDir(
   fn: (base: string) => void | Promise<void>,
 ): () => Promise<void> {
   return async () => {
-    const base = await makeTempDir('sr-');
+    const base = await makeTemporaryDir('sr-');
     try {
       await fn(base);
     } finally {

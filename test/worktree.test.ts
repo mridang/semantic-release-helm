@@ -5,7 +5,7 @@ import { describe, expect, it } from '@jest/globals';
 import { Worktree } from '../src/worktree.js';
 import { git, initRepo } from './utils/git.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
-import { withTempDir } from './utils/tmpdir.js';
+import { withTemporaryDir } from './utils/tmpdir.js';
 
 const author = { name: 'Bot "x"; $(id)', email: 'bot@example.test' };
 
@@ -25,7 +25,7 @@ const real = (dir: string) => {
 describe('Worktree with real git', () => {
   it(
     'lists changes, including untracked files',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await initRepo(dir);
       await writeFile(path.join(dir, 'a.txt'), 'a');
       const { worktree } = real(dir);
@@ -37,7 +37,7 @@ describe('Worktree with real git', () => {
 
   it(
     'returns undefined and logs when there is nothing to commit',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await initRepo(dir);
       const { worktree, lines } = real(dir);
       expect(await worktree.commit('msg', author)).toBeUndefined();
@@ -47,7 +47,7 @@ describe('Worktree with real git', () => {
 
   it(
     'stages everything and returns the commit, with the author and message intact',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await initRepo(dir);
       await writeFile(path.join(dir, 'a.txt'), 'a');
       const { worktree } = real(dir);
@@ -66,7 +66,7 @@ describe('Worktree with real git', () => {
 
   it(
     'commits into an unborn branch',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await initRepo(dir);
       await git(dir, 'checkout', '--orphan', 'pages');
       await writeFile(path.join(dir, 'index.yaml'), 'x');
@@ -77,7 +77,7 @@ describe('Worktree with real git', () => {
 
   it(
     'reports its directory and its branch with the directory attached',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       const { worktree } = real(dir);
       expect(worktree.directory).toBe(dir);
       expect(worktree.branch).toEqual({ name: 'main', directory: dir });
@@ -86,7 +86,7 @@ describe('Worktree with real git', () => {
 
   it(
     'removes itself, and says so when there is nothing to remove',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await initRepo(dir);
       await git(dir, 'commit', '--allow-empty', '--quiet', '-m', 'init');
       const wt = path.join(dir, 'wt');

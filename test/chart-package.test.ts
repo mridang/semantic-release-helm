@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
 import { ChartPackage } from '../src/chart-package.js';
-import { withTempDir } from './utils/tmpdir.js';
+import { withTemporaryDir } from './utils/tmpdir.js';
 
 describe('ChartPackage', () => {
   it('takes its identity from the chart when it was made from one', () => {
@@ -30,7 +30,7 @@ describe('ChartPackage', () => {
 
   it(
     'hashes the file content',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       const file = path.join(dir, 'app-1.0.0.tgz');
       await fs.writeFile(file, 'content');
       expect(await ChartPackage.at(file).digest()).toBe(
@@ -41,7 +41,7 @@ describe('ChartPackage', () => {
 
   it(
     'finds only the .tgz files of a directory',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await fs.writeFile(path.join(dir, 'b-1.0.0.tgz'), 'b');
       await fs.writeFile(path.join(dir, 'a-1.0.0.tgz'), 'a');
       await fs.writeFile(path.join(dir, 'index.yaml'), 'x');

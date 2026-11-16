@@ -11,15 +11,24 @@ import { ChartPackage } from '../src/chart-package.js';
 import { DockerImage } from '../src/docker.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
-import { withTempDir } from './utils/tmpdir.js';
+import { withTemporaryDir } from './utils/tmpdir.js';
 
 /** The pieces a chart needs, with a recording runner. */
 function setup(cwd: string, answer?: Parameters<typeof fakeRunner>[0]) {
   const { run, calls } = fakeRunner(answer);
   const { logger, lines } = recordingLogger();
   const helm = new DockerImage({ image: 'helm:3', logger, cwd, run });
-  const docs = new DockerImage({ image: 'docs:1', logger, cwd, run });
-  return { options: { cwd, logger, run, helm, docs }, calls, lines };
+  const dockerImage = new DockerImage({
+    image: 'docs:1',
+    logger,
+    cwd,
+    run,
+  });
+  return {
+    options: { cwd, logger, run, helm, docs: dockerImage },
+    calls,
+    lines,
+  };
 }
 
 /** A chart in a directory, with images that only record what they run. */
@@ -38,14 +47,14 @@ async function writeChart(
   const chartDir = path.join(dir, name);
   await fs.mkdir(chartDir, { recursive: true });
   const chartFile = path.join(chartDir, 'Chart.yaml');
-  const doc = yaml.stringify({
+  const chartYaml = yaml.stringify({
     apiVersion: 'v2',
     name,
     version,
     description: 'X',
     ...extra,
   } as ChartYaml);
-  await fs.writeFile(chartFile, doc, 'utf8');
+  await fs.writeFile(chartFile, chartYaml, 'utf8');
   return chartDir;
 }
 
@@ -65,7 +74,7 @@ describe('Chart', () => {
    */
   it(
     'loads name and version',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const chartDir = await writeChart(base, 'demo', '1.2.3');
       const chart = await chartAt(chartDir);
       expect({ name: chart.name(), version: chart.version() }).toEqual({
@@ -81,7 +90,7 @@ describe('Chart', () => {
    */
   it(
     'creates new instance on version change',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const c1 = await chartAt(await writeChart(base, 'demo', '1.0.0'));
       const c2 = c1.withVersion('1.1.0');
       expect({ old: c1.version(), newer: c2.version() }).toEqual({
@@ -97,7 +106,7 @@ describe('Chart', () => {
    */
   it(
     'saves YAML and preserves unknown fields',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const dir = await writeChart(base, 'demo', '0.1.0', {
         keywords: ['a', 'b'],
         icon: 'https://x/icon.svg',
@@ -124,7 +133,7 @@ describe('Chart', () => {
    */
   it(
     'writes valid YAML when saved',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const dir = await writeChart(base, 'demo', '9.9.9');
       const opened = await chartAt(dir);
       await opened.save();
@@ -144,7 +153,7 @@ describe('Chart', () => {
    */
   it(
     'returns shallow copy from raw',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const chart = await chartAt(
         await writeChart(base, 'demo', '1.0.0', { a: 1 }),
       );
@@ -164,7 +173,7 @@ describe('Chart', () => {
 describe('Chart.open with unusual Chart.yaml content', () => {
   it(
     'stringifies a numeric name, version and apiVersion',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const dir = path.join(base, 'odd');
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(
@@ -185,7 +194,7 @@ describe('Chart.open with unusual Chart.yaml content', () => {
     ['an empty file', ''],
     ['a non-mapping file', '- a\n- b\n'],
   ])('treats %s as an empty chart', (_label, content) =>
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const dir = path.join(base, 'empty');
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(dir, 'Chart.yaml'), content, 'utf8');
@@ -357,7 +366,7 @@ describe('setChartVersion', () => {
 describe('Chart.open with invalid YAML', () => {
   it(
     'raises a coded error that names the file',
-    withTempDir(async (base: string) => {
+    withTemporaryDir(async (base: string) => {
       const dir = path.join(base, 'bad');
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(dir, 'Chart.yaml'), 'a: 1\n---\nb: 2\n');
@@ -388,7 +397,7 @@ describe('Chart working with Helm', () => {
 
   it(
     'lints, renders and packages in the helm image',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const { chart, calls } = await chartIn(base);
       await chart.lint();
       await expect(chart.render({ a: { b: 'c' }, n: 1 })).resolves.toBe('');
@@ -407,17 +416,17 @@ describe('Chart working with Helm', () => {
 
   it(
     'returns the rendered manifest',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const { chart } = await chartIn(base, () => 'kind: ConfigMap\n');
-      expect(await chart.render(undefined)).toBe('kind: ConfigMap');
+      expect(await chart.render()).toBe('kind: ConfigMap');
     }),
   );
 
   it(
     'adds no --set without template values',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const { chart, calls } = await chartIn(base);
-      await chart.render(undefined);
+      await chart.render();
       expect(afterImage(calls[0]?.args, 'helm:3')).toEqual([
         'template',
         'sr-check',
@@ -428,7 +437,7 @@ describe('Chart working with Helm', () => {
 
   it(
     'writes a new version only when saved',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const { chart } = await chartIn(base);
       const next = chart.withVersion('2.0.0');
       expect(next.version()).toBe('2.0.0');
@@ -445,7 +454,7 @@ describe('Chart working with Helm', () => {
 
   it(
     'normalizes the README and runs helm-docs',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const { chart, calls, lines } = await chartIn(base);
       await fs.writeFile(
         path.join(base, 'app', 'README.md'),
@@ -469,7 +478,7 @@ describe('Chart working with Helm', () => {
 
   it(
     'says so when there is no README or no marker',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const a = await chartIn(base);
       await a.chart.document([]);
       expect(a.lines).toContain(
@@ -486,7 +495,7 @@ describe('Chart working with Helm', () => {
 
   it(
     'logs instead of throwing when helm-docs fails',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const { chart, lines } = await chartIn(base, () => {
         throw new Error('no such image');
       });
@@ -499,7 +508,7 @@ describe('Chart working with Helm', () => {
 
   it(
     'selects only its own package from a listing',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       const { chart } = await chartIn(base);
       const found = ['app-1.2.3.tgz', 'app-1.0.0.tgz', 'other-1.2.3.tgz'].map(
         (n) => ChartPackage.at(path.join(base, n)),
@@ -512,7 +521,7 @@ describe('Chart working with Helm', () => {
 
   it(
     'tells whether a chart exists',
-    withTempDir(async (base) => {
+    withTemporaryDir(async (base) => {
       await writeChart(base, 'app', '1.0.0');
       expect(await Chart.exists({ cwd: base, directory: 'app' })).toBe(true);
       expect(await Chart.exists({ cwd: base, directory: 'missing' })).toBe(
@@ -548,7 +557,7 @@ describe('templateSetArgs', () => {
   });
 
   it('is empty without values', () => {
-    expect(templateSetArgs(undefined)).toEqual([]);
+    expect(templateSetArgs()).toEqual([]);
     expect(templateSetArgs({})).toEqual([]);
   });
 });
