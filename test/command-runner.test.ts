@@ -3,7 +3,9 @@ import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
 import { redactError, runLogged } from '../src/command-runner.js';
 import { run } from '../src/utils/exec.js';
-import { withTempDir } from './utils/tmpdir.js';
+import { withTemporaryDir } from './utils/tmpdir.js';
+
+const COMMAND_FAILED_PREFIX = /^Command failed/;
 
 function captureConsole() {
   const outChunks: string[] = [];
@@ -41,7 +43,7 @@ const q = (s: string) => `'${s}'`;
 describe('runLogged (real runner, full-stream asserts)', () => {
   it(
     'success: returns trimmed stdout and logs it',
-    withTempDir(async (cwd) => {
+    withTemporaryDir(async (cwd) => {
       const { logger, stdout, stderr } = captureConsole();
       const code = 'console.log("hello"); console.log("");';
 
@@ -55,7 +57,7 @@ describe('runLogged (real runner, full-stream asserts)', () => {
 
   it(
     'success with no output: logs "(no output)" and returns empty string',
-    withTempDir(async (cwd) => {
+    withTemporaryDir(async (cwd) => {
       const { logger, stdout, stderr } = captureConsole();
 
       const result = await runLogged(run, node, ['-e', ''], { cwd }, logger);
@@ -68,7 +70,7 @@ describe('runLogged (real runner, full-stream asserts)', () => {
 
   it(
     'failure: logs command, stdout, stderr, and rethrows',
-    withTempDir(async (cwd) => {
+    withTemporaryDir(async (cwd) => {
       const { logger, stdout, stderr } = captureConsole();
       const code =
         String.raw`process.stdout.write("out\n");` +
@@ -97,7 +99,7 @@ describe('runLogged (real runner, full-stream asserts)', () => {
 describe('runLogged failure output that is only whitespace', () => {
   it(
     'logs whitespace-only stderr as captured',
-    withTempDir(async (cwd) => {
+    withTemporaryDir(async (cwd) => {
       const { logger, stderr } = captureConsole();
       const code = String.raw`process.stderr.write("  \n"); process.exit(3);`;
 
@@ -111,14 +113,14 @@ describe('runLogged failure output that is only whitespace', () => {
 
   it(
     'logs nothing extra for empty stdout and stderr',
-    withTempDir(async (cwd) => {
+    withTemporaryDir(async (cwd) => {
       const { logger, stderr } = captureConsole();
 
       await expect(
         runLogged(run, node, ['-e', 'process.exit(4);'], { cwd }, logger),
       ).rejects.toThrow();
       expect(stderr().startsWith('Command failed: ')).toBe(true);
-      expect(stderr().split('\n', 2)[1]).toMatch(/^Command failed/);
+      expect(stderr().split('\n', 2)[1]).toMatch(COMMAND_FAILED_PREFIX);
     }),
   );
 });
@@ -128,7 +130,7 @@ describe('runLogged credential redaction', () => {
 
   it(
     'logs no line that contains a credential from stdout, stderr, the command or the message',
-    withTempDir(async (cwd) => {
+    withTemporaryDir(async (cwd) => {
       const { logger, stdout, stderr } = captureConsole();
       expect(
         await runLogged(
@@ -153,7 +155,7 @@ describe('runLogged credential redaction', () => {
 
   it(
     'leaves URLs without credentials untouched',
-    withTempDir(async (cwd) => {
+    withTemporaryDir(async (cwd) => {
       const { logger, stdout } = captureConsole();
       await runLogged(
         run,
@@ -168,7 +170,7 @@ describe('runLogged credential redaction', () => {
 
   it(
     'rethrows an error that carries no credential in its message, stdout or stderr',
-    withTempDir(async (cwd) => {
+    withTemporaryDir(async (cwd) => {
       const { logger } = captureConsole();
       const u = 'https://u:p@ss@host/x';
       const code = `console.log(${JSON.stringify(u)}); console.error(${JSON.stringify(u)}); process.exit(3)`;

@@ -5,7 +5,7 @@ import { Remote } from '../src/remote.js';
 import { RemoteUrl } from '../src/remote-url.js';
 import { git, initRepo } from './utils/git.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
-import { withTempDir } from './utils/tmpdir.js';
+import { withTemporaryDir } from './utils/tmpdir.js';
 
 const remoteOf = (
   cwd: string,
@@ -75,7 +75,7 @@ describe('Remote with a fake runner', () => {
 describe('Remote with real git', () => {
   it(
     'is reachable when the repository exists and not when it is missing',
-    withTempDir(async (dir) => {
+    withTemporaryDir(async (dir) => {
       await initRepo(dir);
       const bare = path.join(dir, 'bare.git');
       await git(dir, 'init', '--quiet', '--bare', bare);

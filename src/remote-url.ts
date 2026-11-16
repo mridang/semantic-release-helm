@@ -5,6 +5,9 @@ import { anyUserinfoEnd, maskUserinfo } from './utils/redact.js';
  * anything else (an `~/.ssh/config` alias such as `gh-work`, a Windows drive
  * letter, an IPv6 literal) cannot be vouched for as a web host.
  */
+const SCP_LIKE_URL = /^(?:[^@/:]+@)?([^:/@]+):(?!\/\/)(.+)$/;
+const GIT_SUFFIX = /\.git$/;
+
 const WEB_HOST =
   /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i;
 
@@ -116,14 +119,14 @@ export class RemoteUrl {
    * @returns A URL such as `https://github.com/owner/repo`, or undefined.
    */
   webBase(): string | undefined {
-    const scp = /^(?:[^@/:]+@)?([^:/@]+):(?!\/\/)(.+)$/.exec(this.raw);
+    const scp = SCP_LIKE_URL.exec(this.raw);
     const parts = scp
       ? scpParts(scp[1] ?? '', scp[2] ?? '')
       : urlParts(this.raw);
     if (!parts) {
       return undefined;
     }
-    const repoPath = trimSlashes(parts.pathname, true).replace(/\.git$/, '');
+    const repoPath = trimSlashes(parts.pathname, true).replace(GIT_SUFFIX, '');
     if (repoPath.length === 0) {
       return undefined;
     }

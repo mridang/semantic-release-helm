@@ -178,7 +178,7 @@ describe('run', () => {
   });
 
   it('describes output that is not text as empty', async () => {
-    finishWith(new Error('failed'), Buffer.from('x'), undefined);
+    finishWith(new Error('failed'), Buffer.from('x'));
 
     expect(await rejection(run('docker', ['pull']))).toEqual(
       expect.objectContaining({ stdout: '', stderr: '' }),

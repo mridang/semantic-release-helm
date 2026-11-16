@@ -5,6 +5,8 @@
  * @param input - The word to protect.
  * @returns The word wrapped in single quotes.
  */
+const SHELL_SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
+
 export function shQuote(input: string): string {
   const escaped = input.replaceAll("'", String.raw`'\''`);
   return `'${escaped}'`;
@@ -17,5 +19,5 @@ export function shQuote(input: string): string {
  * @returns The word, single-quoted unless it is already safe.
  */
 export function quoteWord(input: string): string {
-  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(input) ? input : shQuote(input);
+  return SHELL_SAFE_WORD.test(input) ? input : shQuote(input);
 }

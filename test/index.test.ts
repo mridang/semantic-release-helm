@@ -25,6 +25,17 @@ import type {
 } from 'semantic-release';
 import { HelmPluginConfig } from '../src/plugin-config.js';
 
+/** Locale-aware comparer, built once. */
+const collator = new Intl.Collator();
+const LISTENING_ON = /listening on/;
+const CHART_VERSION_0_2_0 = /version:\s*0\.2\.0/;
+const GH_PAGES_BRANCH = /gh-pages/;
+const GH_PAGES_HEAD_REF = /refs\/heads\/gh-pages/;
+const APP_0_5_0_ARCHIVE = /app-0\.5\.0\.tgz$/;
+const APP_2_0_0_ARCHIVE = /app-2\.0\.0\.tgz$/;
+const APP_9_0_0_ARCHIVE = /app-9\.0\.0\.tgz$/;
+const STEP_NAME = /(lint|template|helm-docs|package)/;
+
 const HELM_IMAGE = process.env.HELM_IMAGE ?? 'alpine/helm:3.15.2';
 const DOCS_IMAGE = process.env.DOCS_IMAGE ?? 'jnorwood/helm-docs:v1.14.2';
 
@@ -79,7 +90,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       const { GenericContainer, Wait } = await import('testcontainers');
       registry = await new GenericContainer('registry:2')
         .withExposedPorts(5000)
-        .withWaitStrategy(Wait.forLogMessage(/listening on/))
+        .withWaitStrategy(Wait.forLogMessage(LISTENING_ON))
         .start();
 
       registryPort = registry.getMappedPort(5000);
@@ -96,7 +107,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       await fs.mkdir(workdir, { recursive: true });
 
       const srcChart = path.join(testDir, 'chart');
-      const destChart = path.join(workdir, 'app');
+      const destinationChart = path.join(workdir, 'app');
 
       if (!(await pathExists(srcChart))) {
         const entries = await fs.readdir(testDir);
@@ -104,8 +115,8 @@ const dockerAvailable = await (async (): Promise<boolean> => {
         throw new Error(`Missing test chart at ${srcChart}. dir: ${here}`);
       }
 
-      await fs.mkdir(path.dirname(destChart), { recursive: true });
-      await copyDirectory(srcChart, destChart);
+      await fs.mkdir(path.dirname(destinationChart), { recursive: true });
+      await copyDirectory(srcChart, destinationChart);
 
       chartPathInWorkdir = 'app';
     });
@@ -151,10 +162,12 @@ const dockerAvailable = await (async (): Promise<boolean> => {
         path.join(workdir, 'app', 'Chart.yaml'),
         'utf8',
       );
-      expect(chartYaml).toMatch(/version:\s*0\.2\.0/);
+      expect(chartYaml).toMatch(CHART_VERSION_0_2_0);
 
-      const dist = path.join(workdir, 'dist', 'charts');
-      const files = (await pathExists(dist)) ? await fs.readdir(dist) : [];
+      const distribution = path.join(workdir, 'dist', 'charts');
+      const files = (await pathExists(distribution))
+        ? await fs.readdir(distribution)
+        : [];
 
       expect(files.some((f) => f.endsWith('.tgz'))).toBe(true);
       expect(files.includes('index.yaml')).toBe(false);
@@ -189,8 +202,8 @@ const dockerAvailable = await (async (): Promise<boolean> => {
 
       await expect(publish(pubCfg, pubCtx)).resolves.toBeUndefined();
 
-      const dist = path.join(workdir, 'dist', 'charts');
-      const files = await fs.readdir(dist);
+      const distribution = path.join(workdir, 'dist', 'charts');
+      const files = await fs.readdir(distribution);
       expect(files.some((f) => f.endsWith('.tgz'))).toBe(true);
     }, 240_000);
 
@@ -225,8 +238,8 @@ const dockerAvailable = await (async (): Promise<boolean> => {
 
       await expect(publish(pubCfg, pubCtx)).resolves.toBeUndefined();
 
-      const dist = path.join(workdir, 'dist', 'charts');
-      const files = await fs.readdir(dist);
+      const distribution = path.join(workdir, 'dist', 'charts');
+      const files = await fs.readdir(distribution);
       expect(files.some((f) => f.endsWith('.tgz'))).toBe(true);
     }, 240_000);
 
@@ -276,7 +289,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       const { stdout: branches } = await execAsync('git branch --list', {
         cwd: workdir,
       });
-      expect(branches).toMatch(/gh-pages/);
+      expect(branches).toMatch(GH_PAGES_BRANCH);
 
       const { stdout: lsRemote } = await execAsync(
         'git ls-remote --heads origin gh-pages',
@@ -284,7 +297,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
           cwd: workdir,
         },
       );
-      expect(lsRemote).toMatch(/refs\/heads\/gh-pages/);
+      expect(lsRemote).toMatch(GH_PAGES_HEAD_REF);
 
       const checkDir = path.join(workdir, '.check-gh-pages');
       await fs.mkdir(checkDir, { recursive: true });
@@ -313,7 +326,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       };
       expect(firstEntry.urls).toBeDefined();
       expect(firstEntry.urls.length).toBeGreaterThan(0);
-      expect(firstEntry.urls[0]).toMatch(/app-0\.5\.0\.tgz$/);
+      expect(firstEntry.urls[0]).toMatch(APP_0_5_0_ARCHIVE);
       expect(firstEntry).toMatchObject({
         apiVersion: 'v2',
         name: 'app',
@@ -396,7 +409,9 @@ const dockerAvailable = await (async (): Promise<boolean> => {
         }),
       );
 
-      const versions = (parsed.entries.app ?? []).map((e) => e.version);
+      const versions = (parsed.entries.app ?? []).map(
+        (candidate) => candidate.version,
+      );
       expect(versions.indexOf('1.1.0')).toBeLessThan(versions.indexOf('1.0.0'));
     }, 300_000);
 
@@ -467,7 +482,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       const firstEntry = appEntries[0] as { urls: string[]; version: string };
       expect(firstEntry.urls).toBeDefined();
       expect(firstEntry.urls.length).toBeGreaterThan(0);
-      expect(firstEntry.urls[0]).toMatch(/app-2\.0\.0\.tgz$/);
+      expect(firstEntry.urls[0]).toMatch(APP_2_0_0_ARCHIVE);
       expect(firstEntry).toMatchObject({
         version: '2.0.0',
       });
@@ -615,7 +630,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       };
 
       expect(
-        Object.keys(parsed.entries).toSorted((a, b) => a.localeCompare(b)),
+        Object.keys(parsed.entries).toSorted((a, b) => collator.compare(a, b)),
       ).toEqual(['app', 'other']);
       expect(parsed.entries.other).toEqual(
         expect.arrayContaining([
@@ -764,7 +779,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
               cwd: workdir,
             },
           );
-          expect(lsRemote).toMatch(/refs\/heads\/gh-pages/);
+          expect(lsRemote).toMatch(GH_PAGES_HEAD_REF);
 
           const checkDir = path.join(
             workdir,
@@ -790,12 +805,12 @@ const dockerAvailable = await (async (): Promise<boolean> => {
           );
 
           const entry = parsed.entries.app.find(
-            (e) => e.version === '9.0.0',
+            (candidate) => candidate.version === '9.0.0',
           ) as {
             urls: string[];
           };
           expect(Array.isArray(entry.urls) && entry.urls.length > 0).toBe(true);
-          expect(entry.urls[0]).toMatch(/app-9\.0\.0\.tgz$/);
+          expect(entry.urls[0]).toMatch(APP_9_0_0_ARCHIVE);
         }, 360_000);
       },
     );
@@ -851,23 +866,23 @@ async function wiring(base: string): Promise<{
 
 /** Run a body with a different PATH and extra variables, then restore them. */
 async function withWiringEnv<T>(
-  vars: Record<string, string>,
+  variables: Record<string, string>,
   body: () => Promise<T>,
 ): Promise<T> {
   const saved = Object.fromEntries(
-    Object.keys(vars).map((k) => [k, process.env[k]]),
+    Object.keys(variables).map((k) => [k, process.env[k]]),
   );
-  Object.assign(process.env, vars);
+  Object.assign(process.env, variables);
   try {
     return await body();
   } finally {
-    Object.entries(saved).forEach(([k, v]) => {
+    for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) {
         delete process.env[k];
       } else {
         process.env[k] = v;
       }
-    });
+    }
   }
 }
 
@@ -919,9 +934,12 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
       });
       const dockerOut = await fs.readFile(w.dockerLog, 'utf8');
       const calls = dockerOut.split('\n').filter((l) => l.startsWith('CALL '));
-      expect(
-        calls.map((c) => /(lint|template|helm-docs|package)/.exec(c)?.[1]),
-      ).toEqual(['lint', 'template', 'helm-docs', 'package']);
+      expect(calls.map((c) => STEP_NAME.exec(c)?.[1])).toEqual([
+        'lint',
+        'template',
+        'helm-docs',
+        'package',
+      ]);
       const chartYaml = await fs.readFile(
         path.join(w.repo, 'app', 'Chart.yaml'),
         'utf8',

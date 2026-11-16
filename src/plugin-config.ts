@@ -2,6 +2,8 @@
  * @file Parses and validates the plugin configuration supplied to semantic-release.
  */
 // noinspection JSUnusedGlobalSymbols
+const OCI_SCHEME = /^oci:\/\//;
+
 export interface HelmPluginConfig {
   /**
    * Unrecognised keys are tolerated, as they were when this type extended
@@ -105,7 +107,7 @@ export interface HelmPluginConfig {
  */
 function parseOciAsHttp(repo?: string): URL | undefined {
   if (!repo || repo.length === 0) return undefined;
-  const replaced = repo.replace(/^oci:\/\//, 'http://');
+  const replaced = repo.replace(OCI_SCHEME, 'http://');
   try {
     return new URL(replaced);
   } catch {
