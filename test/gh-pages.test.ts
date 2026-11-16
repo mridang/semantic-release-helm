@@ -160,12 +160,13 @@ describe('planGhPages and publishGhPages', () => {
         author,
         tag: noTag,
       });
-      const index = yaml.parse(
+      const index: unknown = yaml.parse(
         await git(s.remote, 'show', 'gh-pages:index.yaml'),
       );
-      expect(index.entries.app[0].urls).toEqual([
-        'https://github.com/o/r/releases/download/v1.0.0/app-1.0.0.tgz',
-      ]);
+      expect(index).toHaveProperty(
+        ['entries', 'app', 0, 'urls'],
+        ['https://github.com/o/r/releases/download/v1.0.0/app-1.0.0.tgz'],
+      );
       expect(await pathExists(path.join(s.repo, '.gh-pages-tmp'))).toBe(false);
     }),
   );
@@ -181,10 +182,13 @@ describe('planGhPages and publishGhPages', () => {
         author,
         tag: noTag,
       });
-      const index = yaml.parse(
+      const index: unknown = yaml.parse(
         await git(s.remote, 'show', 'gh-pages:index.yaml'),
       );
-      expect(index.entries.app[0].urls).toEqual(['app-1.0.0.tgz']);
+      expect(index).toHaveProperty(
+        ['entries', 'app', 0, 'urls'],
+        ['app-1.0.0.tgz'],
+      );
     }),
   );
 
@@ -206,14 +210,12 @@ describe('planGhPages and publishGhPages', () => {
         author,
         tag: noTag,
       });
-      const index = yaml.parse(
+      const index: unknown = yaml.parse(
         await git(s.remote, 'show', 'gh-pages:index.yaml'),
       );
-      expect(
-        index.entries.app.map(
-          (candidate: { version: string }) => candidate.version,
-        ),
-      ).toEqual(['1.0.0', '0.9.0']);
+      expect(index).toMatchObject({
+        entries: { app: [{ version: '1.0.0' }, { version: '0.9.0' }] },
+      });
     }),
   );
 
@@ -244,12 +246,15 @@ describe('planGhPages and publishGhPages', () => {
         author,
         tag: 'release-1.0.0',
       });
-      const index = yaml.parse(
+      const index: unknown = yaml.parse(
         await git(s.remote, 'show', 'gh-pages:index.yaml'),
       );
-      expect(index.entries.app[0].urls).toEqual([
-        'https://github.com/o/r/releases/download/release-1.0.0/app-1.0.0.tgz',
-      ]);
+      expect(index).toHaveProperty(
+        ['entries', 'app', 0, 'urls'],
+        [
+          'https://github.com/o/r/releases/download/release-1.0.0/app-1.0.0.tgz',
+        ],
+      );
     }),
   );
 
@@ -271,12 +276,13 @@ describe('planGhPages and publishGhPages', () => {
         author,
         tag: noTag,
       });
-      const index = yaml.parse(
+      const index: unknown = yaml.parse(
         await git(s.remote, 'show', 'gh-pages:index.yaml'),
       );
-      expect(index.entries.app[0].urls).toEqual([
-        'https://charts.example.test/app-1.0.0.tgz',
-      ]);
+      expect(index).toHaveProperty(
+        ['entries', 'app', 0, 'urls'],
+        ['https://charts.example.test/app-1.0.0.tgz'],
+      );
     }),
   );
 

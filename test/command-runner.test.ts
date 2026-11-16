@@ -12,7 +12,7 @@ function captureConsole() {
   const errChunks: string[] = [];
 
   const out = new Writable({
-    write(chunk, _enc, done) {
+    write(chunk: Buffer | string, _enc, done) {
       outChunks.push(
         typeof chunk === 'string' ? chunk : chunk.toString('utf8'),
       );
@@ -21,7 +21,7 @@ function captureConsole() {
   });
 
   const err = new Writable({
-    write(chunk, _enc, done) {
+    write(chunk: Buffer | string, _enc, done) {
       errChunks.push(
         typeof chunk === 'string' ? chunk : chunk.toString('utf8'),
       );

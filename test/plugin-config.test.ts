@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { HelmConfig, HelmPluginConfig } from '../src/plugin-config.js';
+import { HelmConfig, type HelmPluginConfig } from '../src/plugin-config.js';
 import { withEnv } from './utils/withenv.js';
 
 /** An unset value, declared without a literal `undefined` so it can be passed explicitly. */
@@ -7,7 +7,7 @@ let absent: undefined;
 
 describe('HelmConfig', () => {
   it('defaults: only chartPath provided', () => {
-    const cfg = new HelmConfig({ chartPath: 'charts/app' } as HelmPluginConfig);
+    const cfg = new HelmConfig({ chartPath: 'charts/app' });
 
     expect({
       chartPath: cfg.getChartPath(),
@@ -57,7 +57,7 @@ describe('HelmConfig', () => {
       helmImage: 'example/helm:9.9.9',
       docsImage: 'example/helm-docs:v2.0.0',
       docsArgs: ['--template-files=README.md.gotmpl', '--sort-values'],
-    } as HelmPluginConfig);
+    });
 
     expect({
       helmImage: cfg.getHelmImage(),
@@ -79,7 +79,7 @@ describe('HelmConfig', () => {
         repo: 'upstream',
         branch: 'pages',
       },
-    } as HelmPluginConfig);
+    });
 
     expect({
       enabled: cfg.isGhEnabled(),
@@ -98,7 +98,7 @@ describe('HelmConfig', () => {
     const cfg = new HelmConfig({
       chartPath: 'x',
       ociRepo: 'oci://ghcr.io/my-org/helm',
-    } as HelmPluginConfig);
+    });
 
     expect({
       enabled: cfg.isOciEnabled(),
@@ -120,7 +120,7 @@ describe('HelmConfig', () => {
     const cfg = new HelmConfig({
       chartPath: 'x',
       ociRepo: 'oci://registry.example.com:5000/ns/helm',
-    } as HelmPluginConfig);
+    });
 
     expect({
       host: cfg.getOciHost(),
@@ -138,7 +138,7 @@ describe('HelmConfig', () => {
       chartPath: 'x',
       ociRepo: 'oci://ghcr.io/my-org/helm',
       ociInsecure: true,
-    } as HelmPluginConfig);
+    });
 
     expect({
       insecure: cfg.getOciInsecure(),
@@ -155,7 +155,7 @@ describe('HelmConfig', () => {
       ociRepo: 'oci://ghcr.io/x/y',
       ociUsername: 'cfg-user',
       ociPassword: 'cfg-pass',
-    } as HelmPluginConfig);
+    });
 
     expect({
       user: cfg.getOciUsername(),
@@ -175,7 +175,7 @@ describe('HelmConfig', () => {
       const cfg = new HelmConfig({
         chartPath: 'x',
         ociRepo: 'oci://ghcr.io/x/y',
-      } as HelmPluginConfig);
+      });
 
       expect({
         user: cfg.getOciUsername(),
@@ -196,7 +196,7 @@ describe('HelmConfig', () => {
       const cfg = new HelmConfig({
         chartPath: 'x',
         ociRepo: 'oci://ghcr.io/x/y',
-      } as HelmPluginConfig);
+      });
 
       expect({
         user: cfg.getOciUsername(),
@@ -214,7 +214,7 @@ describe('HelmConfig', () => {
     const cfg = new HelmConfig({
       chartPath: 'charts/svc',
       ociRepo: 'oci://registry.acme.io/acme/svc',
-    } as HelmPluginConfig);
+    });
 
     expect({
       chartPath: cfg.getChartPath(),
@@ -228,7 +228,7 @@ describe('HelmConfig', () => {
 
 describe('HelmConfig with null values from a JSON or YAML config file', () => {
   const fromFile = (json: string): HelmConfig =>
-    new HelmConfig(JSON.parse(json));
+    new HelmConfig(JSON.parse(json) as HelmPluginConfig);
 
   it('treats null like an unset option for every option with a default', () => {
     const cfg = fromFile(

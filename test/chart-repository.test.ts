@@ -3,8 +3,10 @@ import path from 'node:path';
 import yaml from 'yaml';
 import { Chart } from '../src/chart.js';
 import { ChartPackage } from '../src/chart-package.js';
-import { ChartRepository, ChartEntry } from '../src/chart-repository.js';
+import type { ChartEntry } from '../src/chart-repository.js';
+import { ChartRepository } from '../src/chart-repository.js';
 import { DockerImage } from '../src/docker.js';
+import { isRecord } from '../src/utils/object.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { withTemporaryDir } from './utils/tmpdir.js';
@@ -488,24 +490,24 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
       const tgz = await writeTgz(base, 'demo', '1.0.0', 'x');
       const out = path.join(base, 'index.yaml');
       await addAndSave(path.dirname(file), chart, ChartPackage.at(tgz), '');
-      const parsedIndex = yaml.parse(await fs.readFile(out, 'utf8'));
-      expect(parsedIndex.apiVersion).toBe('v1');
-      expect(parsedIndex.annotations).toEqual({ team: 'platform' });
-      expect(parsedIndex.entries.other).toEqual([
-        { name: 'other', version: 2 },
-        'junk',
-        null,
-      ]);
-      expect(parsedIndex.entries.nul).toBeNull();
-      expect(parsedIndex.entries.mapping).toEqual({ a: 1 });
-      expect(parsedIndex.entries.demo).toHaveLength(1);
+      const parsedIndex: unknown = yaml.parse(await fs.readFile(out, 'utf8'));
+      expect(parsedIndex).toMatchObject({
+        apiVersion: 'v1',
+        annotations: { team: 'platform' },
+        entries: {
+          other: [{ name: 'other', version: 2 }, 'junk', null],
+          nul: null,
+          mapping: { a: 1 },
+          demo: [expect.anything()],
+        },
+      });
     }),
   );
 
   it.each([
     ['a mapping', 'entries:\n  demo:\n    a: 1\n'],
     ['a scalar', 'entries:\n  demo: nope\n'],
-  ])('refuses to append over a chart key that is %s', (_label, content) =>
+  ])('refuses to append over a chart key that is %s', async (_label, content) =>
     withTemporaryDir(async (base: string) => {
       const file = path.join(base, 'index.yaml');
       await fs.writeFile(file, content, 'utf8');
@@ -522,7 +524,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
     ['null', 'entries: null\n'],
     ['absent', 'apiVersion: v1\n'],
     ['a null chart key', 'entries:\n  demo: null\n'],
-  ])('treats %s as empty', (_label, content) =>
+  ])('treats %s as empty', async (_label, content) =>
     withTemporaryDir(async (base: string) => {
       const file = path.join(base, 'index.yaml');
       await fs.writeFile(file, content, 'utf8');
@@ -538,7 +540,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
   it.each([
     ['a list', 'entries:\n  - a\n'],
     ['a string', 'entries: nope\n'],
-  ])('refuses an index whose entries is %s', (_label, content) =>
+  ])('refuses an index whose entries is %s', async (_label, content) =>
     withTemporaryDir(async (base: string) => {
       const file = path.join(base, 'index.yaml');
       await fs.writeFile(file, content, 'utf8');
@@ -581,12 +583,10 @@ describe('ChartRepository.append with unusual chart names', () => {
       const tgz = await writeTgz(base, 'constructor', '1.0.0', 'x');
       const out = path.join(base, 'index.yaml');
       await addAndSave(path.dirname(out), chart, ChartPackage.at(tgz), '');
-      const written = yaml.parse(await fs.readFile(out, 'utf8'));
-      expect(
-        written.entries.constructor.map(
-          (candidate: ChartEntry) => candidate.version,
-        ),
-      ).toEqual(['1.0.0']);
+      const written: unknown = yaml.parse(await fs.readFile(out, 'utf8'));
+      expect(written).toMatchObject({
+        entries: { constructor: [{ version: '1.0.0' }] },
+      });
     }),
   );
 });
@@ -605,7 +605,8 @@ describe('ChartRepository key order', () => {
       const tgz = await writeTgz(base, 'demo', '1.0.0', 'x');
       const out = path.join(base, 'index.yaml');
       await addAndSave(path.dirname(file), chart, ChartPackage.at(tgz), '');
-      expect(Object.keys(yaml.parse(await fs.readFile(out, 'utf8')))).toEqual([
+      const parsed: unknown = yaml.parse(await fs.readFile(out, 'utf8'));
+      expect(isRecord(parsed) ? Object.keys(parsed) : []).toEqual([
         'apiVersion',
         'entries',
         'annotations',

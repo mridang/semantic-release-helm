@@ -67,7 +67,7 @@ describe('run', () => {
     expect(execFileMock.mock.calls[0][2]).toEqual(
       expect.objectContaining({
         cwd: '/work',
-        env: expect.objectContaining({ A: 'b', PATH: process.env['PATH'] }),
+        env: expect.objectContaining({ A: 'b', PATH: process.env.PATH }),
         timeout: 1234,
         encoding: 'utf8',
       }),

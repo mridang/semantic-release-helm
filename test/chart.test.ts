@@ -1,12 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import yaml from 'yaml';
-import {
-  Chart,
-  ChartYaml,
-  setChartVersion,
-  templateSetArgs,
-} from '../src/chart.js';
+import type { ChartYaml } from '../src/chart.js';
+import { Chart, setChartVersion, templateSetArgs } from '../src/chart.js';
 import { ChartPackage } from '../src/chart-package.js';
 import { DockerImage } from '../src/docker.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
@@ -53,7 +49,7 @@ async function writeChart(
     version,
     description: 'X',
     ...extra,
-  } as ChartYaml);
+  });
   await fs.writeFile(chartFile, chartYaml, 'utf8');
   return chartDir;
 }
@@ -158,7 +154,7 @@ describe('Chart', () => {
         await writeChart(base, 'demo', '1.0.0', { a: 1 }),
       );
       const r1 = chart.metadata();
-      (r1 as Record<string, unknown>).a = 2;
+      r1.a = 2;
       expect(chart.metadata()).toEqual({
         apiVersion: 'v2',
         name: 'demo',
@@ -193,7 +189,7 @@ describe('Chart.open with unusual Chart.yaml content', () => {
   it.each([
     ['an empty file', ''],
     ['a non-mapping file', '- a\n- b\n'],
-  ])('treats %s as an empty chart', (_label, content) =>
+  ])('treats %s as an empty chart', async (_label, content) =>
     withTemporaryDir(async (base: string) => {
       const dir = path.join(base, 'empty');
       await fs.mkdir(dir, { recursive: true });

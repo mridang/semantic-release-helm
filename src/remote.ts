@@ -113,7 +113,7 @@ export class Remote {
    * @param args - Arguments after `git`.
    * @returns The trimmed standard output.
    */
-  private git(args: readonly string[]): Promise<string> {
+  private async git(args: readonly string[]): Promise<string> {
     return runLogged(
       this.options.run ?? execRun,
       'git',

@@ -146,7 +146,7 @@ export class GitRepository {
    * @param args - Arguments after `git`.
    * @returns The trimmed standard output.
    */
-  private git(args: readonly string[]): Promise<string> {
+  private async git(args: readonly string[]): Promise<string> {
     return runLogged(
       this.context.run ?? execRun,
       'git',

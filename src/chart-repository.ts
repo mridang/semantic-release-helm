@@ -265,10 +265,7 @@ export class ChartRepository {
       : [];
     const kept = existing.filter(
       (candidate) =>
-        !(
-          isRecord(candidate) &&
-          String(candidate.version) === String(entry.version)
-        ),
+        !(isRecord(candidate) && String(candidate.version) === entry.version),
     );
 
     return new ChartRepository(
