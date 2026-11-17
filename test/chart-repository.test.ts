@@ -10,6 +10,7 @@ import { isRecord } from '../src/utils/object.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
 import { withTemporaryDir } from './utils/tmpdir.js';
 import { sha256OfFile } from './utils/filehash.js';
+import { readIndexYaml } from './utils/index-yaml.js';
 import type { ChartEntry } from '../src/chart-repository.js';
 
 /** A chart in a directory, with images that are never run. */
@@ -78,18 +79,6 @@ async function writeTgz(
   return tgz;
 }
 
-interface ChartRepositoryDocument {
-  apiVersion: 'v1';
-  entries: Record<string, ChartEntry[]>;
-  generated?: string;
-}
-
-async function readIndex(idxPath: string): Promise<ChartRepositoryDocument> {
-  return yaml.parse(
-    await fs.readFile(idxPath, 'utf8'),
-  ) as ChartRepositoryDocument;
-}
-
 beforeAll(() => {
   jest.useFakeTimers();
   jest.setSystemTime(FIXED_TIME);
@@ -109,7 +98,7 @@ describe('ChartRepository', () => {
     withTemporaryDir(async (base: string) => {
       const idxPath = path.join(base, 'charts', 'index.yaml');
       await saveAt(path.dirname(idxPath));
-      expect(await readIndex(idxPath)).toEqual({
+      expect(await readIndexYaml(idxPath)).toEqual({
         apiVersion: 'v1',
         entries: {},
       });
@@ -145,7 +134,7 @@ describe('ChartRepository', () => {
         'https://example.test/charts',
       );
 
-      expect(await readIndex(idxPath)).toEqual({
+      expect(await readIndexYaml(idxPath)).toEqual({
         apiVersion: 'v1',
         generated: FIXED_ISO,
         entries: {
@@ -201,7 +190,7 @@ describe('ChartRepository', () => {
         'https://u.test/charts',
       );
 
-      expect(await readIndex(idxPath)).toEqual({
+      expect(await readIndexYaml(idxPath)).toEqual({
         apiVersion: 'v1',
         generated: FIXED_ISO,
         entries: {
@@ -247,7 +236,7 @@ describe('ChartRepository', () => {
         'https://ex.test/charts',
       );
 
-      expect(await readIndex(idxPath)).toEqual({
+      expect(await readIndexYaml(idxPath)).toEqual({
         apiVersion: 'v1',
         generated: FIXED_ISO,
         entries: {
@@ -288,7 +277,7 @@ describe('ChartRepository', () => {
       const tgz = await writeTgz(base, 'web', '3.1.4', 'content');
 
       await addAndSave(path.dirname(idxPath), chart, ChartPackage.at(tgz), '');
-      expect(await readIndex(idxPath)).toEqual({
+      expect(await readIndexYaml(idxPath)).toEqual({
         apiVersion: 'v1',
         generated: FIXED_ISO,
         entries: {
@@ -313,8 +302,8 @@ describe('ChartRepository', () => {
         'https://repo.test/charts',
       );
 
-      const parsed = await readIndex(idxPath);
-      expect(parsed.entries.web[0]).toEqual({
+      const parsed = await readIndexYaml(idxPath);
+      expect(parsed.entries.web?.[0]).toEqual({
         apiVersion: 'v2',
         name: 'web',
         version: '3.1.5',
@@ -358,7 +347,7 @@ describe('ChartRepository metadata and persistence', () => {
         'https://r.test/c',
       );
 
-      expect(await readIndex(idxPath)).toEqual({
+      expect(await readIndexYaml(idxPath)).toEqual({
         apiVersion: 'v1',
         generated: FIXED_ISO,
         entries: {
@@ -409,7 +398,7 @@ describe('ChartRepository metadata and persistence', () => {
         'https://good/charts',
       );
 
-      expect(await readIndex(idxPath)).toEqual({
+      expect(await readIndexYaml(idxPath)).toEqual({
         apiVersion: 'v1',
         generated: FIXED_ISO,
         entries: {
@@ -441,10 +430,10 @@ describe('ChartRepository metadata and persistence', () => {
       const tgz = await writeTgz(base, 'clock', '1.0.0', 't');
 
       await addAndSave(path.dirname(idxPath), chart, ChartPackage.at(tgz), '');
-      const first = await readIndex(idxPath);
+      const first = await readIndexYaml(idxPath);
 
       await saveAt(path.dirname(idxPath));
-      const second = await readIndex(idxPath);
+      const second = await readIndexYaml(idxPath);
 
       expect(first).toEqual({
         apiVersion: 'v1',
@@ -532,7 +521,7 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
       const tgz = await writeTgz(base, 'demo', '1.0.0', 'x');
       const out = path.join(base, 'index.yaml');
       await addAndSave(path.dirname(file), chart, ChartPackage.at(tgz), '');
-      const { entries } = await readIndex(out);
+      const { entries } = await readIndexYaml(out);
       expect(entries.demo).toHaveLength(1);
     })(),
   );
@@ -557,7 +546,10 @@ describe('ChartRepository load, append and write of unusual index.yaml content',
       const out = path.join(base, 'index.yaml');
       await fs.writeFile(file, '', 'utf8');
       await saveAt(path.dirname(file));
-      expect(await readIndex(out)).toEqual({ apiVersion: 'v1', entries: {} });
+      expect(await readIndexYaml(out)).toEqual({
+        apiVersion: 'v1',
+        entries: {},
+      });
     }),
   );
 
@@ -635,8 +627,8 @@ describe('ChartRepository YAML handling', () => {
         pkg,
         `https://u.test/charts${'/'.repeat(200_000)}`,
       );
-      const index = await readIndex(idxPath);
-      expect(index.entries.slashy?.[0]?.urls).toEqual([
+      const index = await readIndexYaml(idxPath);
+      expect(index.entries.slashy?.[0].urls).toEqual([
         `https://u.test/charts/${pkg.fileName}`,
       ]);
     }),

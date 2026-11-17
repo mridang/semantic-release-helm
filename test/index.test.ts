@@ -16,13 +16,9 @@ import { parse, stringify } from 'yaml';
 // noinspection ES6PreferShortImport
 import { verifyConditions, prepare, publish } from '../src/index.js';
 import { copyDirectory, pathExists } from './utils/fs.js';
+import { readIndexYaml } from './utils/index-yaml.js';
 import { execAsync, execFileAsync } from './utils/exec.js';
 import type { StartedTestContainer } from 'testcontainers';
-import type {
-  VerifyConditionsContext,
-  PrepareContext,
-  PublishContext,
-} from 'semantic-release';
 import type { HelmPluginConfig } from '../src/plugin-config.js';
 
 /** Locale-aware comparer, built once. */
@@ -135,7 +131,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       const ctx = {
         logger,
         cwd: workdir,
-      } as unknown as VerifyConditionsContext;
+      };
 
       await expect(verifyConditions(cfg, ctx)).resolves.toBeUndefined();
     }, 120_000);
@@ -154,7 +150,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
         logger,
         cwd: workdir,
         nextRelease: { version: '0.2.0' },
-      } as unknown as PrepareContext;
+      };
 
       await expect(prepare(cfg, ctx)).resolves.toBeUndefined();
 
@@ -184,7 +180,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
         logger,
         cwd: workdir,
         nextRelease: { version: '0.3.0' },
-      } as unknown as PrepareContext;
+      };
 
       await prepare(prepCfg, prepCtx);
 
@@ -198,7 +194,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
         ociInsecure: true,
         ghPages: { enabled: false },
       };
-      const pubCtx = { logger, cwd: workdir } as unknown as PublishContext;
+      const pubCtx = { logger, cwd: workdir };
 
       await expect(publish(pubCfg, pubCtx)).resolves.toBeUndefined();
 
@@ -218,7 +214,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
         logger,
         cwd: workdir,
         nextRelease: { version: '0.4.0' },
-      } as unknown as PrepareContext;
+      };
 
       await prepare(prepCfg, prepCtx);
 
@@ -234,7 +230,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
         ociPassword: 'anonymous',
         ghPages: { enabled: false },
       };
-      const pubCtx = { logger, cwd: workdir } as unknown as PublishContext;
+      const pubCtx = { logger, cwd: workdir };
 
       await expect(publish(pubCfg, pubCtx)).resolves.toBeUndefined();
 
@@ -269,7 +265,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
         logger,
         cwd: workdir,
         nextRelease: { version: '0.5.0' },
-      } as unknown as PrepareContext;
+      };
       await prepare(prepCfg, prepCtx);
 
       const pubCfg: HelmPluginConfig = {
@@ -282,7 +278,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
           url: 'https://example.test/charts',
         },
       };
-      const pubCtx = { logger, cwd: workdir } as unknown as PublishContext;
+      const pubCtx = { logger, cwd: workdir };
 
       await expect(publish(pubCfg, pubCtx)).resolves.toBeUndefined();
 
@@ -311,19 +307,11 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       const indexPath = path.join(chartsDir, 'index.yaml');
       expect(await pathExists(indexPath)).toBe(true);
 
-      const parsed = parse(await fs.readFile(indexPath, 'utf8')) as {
-        apiVersion: string;
-        entries: Record<string, Array<Record<string, unknown>>>;
-      };
+      const parsed = await readIndexYaml(indexPath);
 
       const appEntries = parsed.entries.app ?? [];
       expect(appEntries.length).toBeGreaterThan(0);
-      const firstEntry = appEntries[0] as {
-        urls: string[];
-        apiVersion: string;
-        name: string;
-        version: string;
-      };
+      const [firstEntry] = appEntries;
       expect(firstEntry.urls).toBeDefined();
       expect(firstEntry.urls.length).toBeGreaterThan(0);
       expect(firstEntry.urls[0]).toMatch(APP_0_5_0_ARCHIVE);
@@ -359,30 +347,36 @@ const dockerAvailable = await (async (): Promise<boolean> => {
         docsImage: DOCS_IMAGE,
       };
 
-      await prepare({ ...baseCfg, ghPages: { enabled: true } }, {
-        logger,
-        cwd: workdir,
-        nextRelease: { version: '1.0.0' },
-      } as unknown as PrepareContext);
+      await prepare(
+        { ...baseCfg, ghPages: { enabled: true } },
+        {
+          logger,
+          cwd: workdir,
+          nextRelease: { version: '1.0.0' },
+        },
+      );
       await publish(
         {
           ...baseCfg,
           ghPages: { enabled: true, branch: 'gh-pages' },
         },
-        { logger, cwd: workdir } as unknown as PublishContext,
+        { logger, cwd: workdir },
       );
 
-      await prepare({ ...baseCfg, ghPages: { enabled: true } }, {
-        logger,
-        cwd: workdir,
-        nextRelease: { version: '1.1.0' },
-      } as unknown as PrepareContext);
+      await prepare(
+        { ...baseCfg, ghPages: { enabled: true } },
+        {
+          logger,
+          cwd: workdir,
+          nextRelease: { version: '1.1.0' },
+        },
+      );
       await publish(
         {
           ...baseCfg,
           ghPages: { enabled: true, branch: 'gh-pages' },
         },
-        { logger, cwd: workdir } as unknown as PublishContext,
+        { logger, cwd: workdir },
       );
 
       const checkDir = path.join(workdir, '.check-gh-pages-merge');
@@ -392,10 +386,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       );
 
       const indexPath = path.join(checkDir, 'index.yaml');
-      const parsed = parse(await fs.readFile(indexPath, 'utf8')) as {
-        apiVersion: string;
-        entries: Record<string, Array<{ version: string }>>;
-      };
+      const parsed = await readIndexYaml(indexPath);
 
       expect(parsed).toEqual(
         expect.objectContaining({
@@ -442,7 +433,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
           logger,
           cwd: workdir,
           nextRelease: { version: '2.0.0' },
-        } as unknown as PrepareContext,
+        },
       );
 
       const ociRepo = `oci://host.docker.internal:${registryPort}/charts`;
@@ -461,7 +452,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
               url: 'https://example.test/charts',
             },
           },
-          { logger, cwd: workdir } as unknown as PublishContext,
+          { logger, cwd: workdir },
         ),
       ).resolves.toBeUndefined();
 
@@ -472,14 +463,11 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       );
       const indexPath = path.join(checkDir, 'index.yaml');
 
-      const parsed = parse(await fs.readFile(indexPath, 'utf8')) as {
-        apiVersion: string;
-        entries: Record<string, Array<Record<string, unknown>>>;
-      };
+      const parsed = await readIndexYaml(indexPath);
 
       const appEntries = parsed.entries.app ?? [];
       expect(appEntries.length).toBeGreaterThan(0);
-      const firstEntry = appEntries[0] as { urls: string[]; version: string };
+      const [firstEntry] = appEntries;
       expect(firstEntry.urls).toBeDefined();
       expect(firstEntry.urls.length).toBeGreaterThan(0);
       expect(firstEntry.urls[0]).toMatch(APP_2_0_0_ARCHIVE);
@@ -515,7 +503,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
           logger,
           cwd: workdir,
           nextRelease: { version: '3.0.0' },
-        } as unknown as PrepareContext,
+        },
       );
 
       await publish(
@@ -525,7 +513,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
           docsImage: DOCS_IMAGE,
           ghPages: { enabled: true, branch: 'gh-pages' },
         },
-        { logger, cwd: workdir } as unknown as PublishContext,
+        { logger, cwd: workdir },
       );
 
       const checkDir = path.join(workdir, '.check-relative');
@@ -535,10 +523,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       );
       const indexPath = path.join(checkDir, 'index.yaml');
 
-      const parsed = parse(await fs.readFile(indexPath, 'utf8')) as {
-        apiVersion: string;
-        entries: Record<string, Array<{ urls: string[] }>>;
-      };
+      const parsed = await readIndexYaml(indexPath);
 
       const urls = parsed.entries.app?.[0]?.urls ?? [];
       expect(urls.some((u) => u.endsWith('app-3.0.0.tgz'))).toBe(true);
@@ -605,7 +590,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
           logger,
           cwd: workdir,
           nextRelease: { version: '4.0.0' },
-        } as unknown as PrepareContext,
+        },
       );
       await publish(
         {
@@ -614,7 +599,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
           docsImage: DOCS_IMAGE,
           ghPages: { enabled: true, branch: 'gh-pages' },
         },
-        { logger, cwd: workdir } as unknown as PublishContext,
+        { logger, cwd: workdir },
       );
 
       const checkDir = path.join(workdir, '.check-preserve');
@@ -624,10 +609,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
       );
       const indexPath = path.join(checkDir, 'index.yaml');
 
-      const parsed = parse(await fs.readFile(indexPath, 'utf8')) as {
-        apiVersion: string;
-        entries: Record<string, Array<Record<string, unknown>>>;
-      };
+      const parsed = await readIndexYaml(indexPath);
 
       expect(
         Object.keys(parsed.entries).toSorted((a, b) => collator.compare(a, b)),
@@ -751,7 +733,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
               logger,
               cwd: workdir,
               nextRelease: { version: '9.0.0' },
-            } as unknown as PrepareContext,
+            },
           );
 
           await expect(
@@ -769,7 +751,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
                       : undefined,
                 },
               },
-              { logger, cwd: workdir } as unknown as PublishContext,
+              { logger, cwd: workdir },
             ),
           ).resolves.toBeUndefined();
 
@@ -792,10 +774,7 @@ const dockerAvailable = await (async (): Promise<boolean> => {
           const indexPath = path.join(checkDir, 'index.yaml');
           expect(await pathExists(indexPath)).toBe(true);
 
-          const parsed = parse(await fs.readFile(indexPath, 'utf8')) as {
-            apiVersion: string;
-            entries: Record<string, Array<{ version: string; urls: string[] }>>;
-          };
+          const parsed = await readIndexYaml(indexPath);
 
           expect(parsed.apiVersion).toBe('v1');
           expect(parsed.entries.app).toEqual(
@@ -804,13 +783,11 @@ const dockerAvailable = await (async (): Promise<boolean> => {
             ]),
           );
 
-          const entry = parsed.entries.app.find(
+          const entry = parsed.entries.app?.find(
             (candidate) => candidate.version === '9.0.0',
-          ) as {
-            urls: string[];
-          };
-          expect(Array.isArray(entry.urls) && entry.urls.length > 0).toBe(true);
-          expect(entry.urls[0]).toMatch(APP_9_0_0_ARCHIVE);
+          );
+          expect(entry?.urls.length).toBeGreaterThan(0);
+          expect(entry?.urls[0]).toMatch(APP_9_0_0_ARCHIVE);
         }, 360_000);
       },
     );
@@ -911,7 +888,7 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
               ociUsername: 'user',
               ghPages: { enabled: false },
             },
-            { cwd: w.repo, logger } as unknown as VerifyConditionsContext,
+            { cwd: w.repo, logger },
           ),
         ).rejects.toMatchObject({ code: 'EOCICREDSINCOMPLETE' });
       });
@@ -926,11 +903,14 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
       const w = await wiring(dir);
       const { logger } = recording();
       await withWiringEnv({ PATH: w.path }, async () => {
-        await prepare({ chartPath: 'app', ghPages: { enabled: false } }, {
-          cwd: w.repo,
-          logger,
-          nextRelease: { version: '2.0.0' },
-        } as unknown as PrepareContext);
+        await prepare(
+          { chartPath: 'app', ghPages: { enabled: false } },
+          {
+            cwd: w.repo,
+            logger,
+            nextRelease: { version: '2.0.0' },
+          },
+        );
       });
       const dockerOut = await fs.readFile(w.dockerLog, 'utf8');
       const calls = dockerOut.split('\n').filter((l) => l.startsWith('CALL '));
@@ -965,7 +945,7 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
             ociPassword: fixtureCredential,
             ghPages: { enabled: false },
           },
-          { cwd: w.repo, logger } as unknown as PublishContext,
+          { cwd: w.repo, logger },
         );
       });
       const docker = await fs.readFile(w.dockerLog, 'utf8');
@@ -996,10 +976,13 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
       const { logger } = recording();
       await withWiringEnv({ PATH: w.path }, async () => {
         await expect(
-          publish({ chartPath: 'app', ociRepo: OCI }, {
-            cwd: w.repo,
-            logger,
-          } as unknown as PublishContext),
+          publish(
+            { chartPath: 'app', ociRepo: OCI },
+            {
+              cwd: w.repo,
+              logger,
+            },
+          ),
         ).rejects.toMatchObject({ code: 'EINVALIDINDEX' });
       });
       expect(await pathExists(w.dockerLog)).toBe(false);
@@ -1017,10 +1000,13 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
         { PATH: w.path, DOCKER_FAIL_ON: 'helm push' },
         async () => {
           await expect(
-            publish({ chartPath: 'app', ociRepo: OCI }, {
-              cwd: w.repo,
-              logger,
-            } as unknown as PublishContext),
+            publish(
+              { chartPath: 'app', ociRepo: OCI },
+              {
+                cwd: w.repo,
+                logger,
+              },
+            ),
           ).rejects.toThrow();
         },
       );
@@ -1046,12 +1032,15 @@ describe('semantic-release-helm wiring (fake docker on PATH, real git)', () => {
           GIT_AUTHOR_EMAIL: 'bot@example.test',
         },
         async () => {
-          await publish({ chartPath: 'app', ociRepo: OCI }, {
-            cwd: w.repo,
-            logger,
-            nextRelease: { gitTag: 'v1.0.0' },
-            options: { repositoryUrl: 'https://github.com/o/r.git' },
-          } as unknown as PublishContext);
+          await publish(
+            { chartPath: 'app', ociRepo: OCI },
+            {
+              cwd: w.repo,
+              logger,
+              nextRelease: { gitTag: 'v1.0.0' },
+              options: { repositoryUrl: 'https://github.com/o/r.git' },
+            },
+          );
         },
       );
       const dockerLog = await fs.readFile(w.dockerLog, 'utf8');

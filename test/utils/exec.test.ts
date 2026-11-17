@@ -5,7 +5,10 @@ type Callback = (error: unknown, stdout: unknown, stderr: unknown) => void;
 /** An unset value, declared without a literal `undefined` so it can be passed explicitly. */
 // eslint-disable-next-line sonarjs/no-undefined-assignment -- the tests need an explicit undefined to pass as an option
 const absent = undefined;
-const stdin = { on: jest.fn(), end: jest.fn() };
+const stdin = {
+  on: jest.fn<(event: string, handler: () => void) => void>(),
+  end: jest.fn(),
+};
 const execFileMock =
   jest.fn<
     (
@@ -100,9 +103,9 @@ describe('run', () => {
   it('ignores a broken pipe when the command exits before reading its input', async () => {
     await run('docker', ['login'], { input: 'secret' });
 
-    const [event, handler] = stdin.on.mock.calls[0] as [string, () => void];
+    const [event, handler] = stdin.on.mock.calls[0];
     expect(event).toBe('error');
-    expect(handler()).toBeUndefined();
+    expect(() => handler()).not.toThrow();
   });
 
   it('rejects with an ExecError that keeps code, status and signal', async () => {
