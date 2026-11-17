@@ -1,8 +1,8 @@
 import { access, copyFile, mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 
-export const pathExists = async (path: string): Promise<boolean> =>
-  access(path)
+export const pathExists = async (target: string): Promise<boolean> =>
+  access(target)
     .then(() => true)
     .catch(() => false);
 

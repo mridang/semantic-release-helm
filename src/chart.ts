@@ -40,26 +40,21 @@ export interface ChartOptions extends CommandContext {
   readonly docs: DockerImage;
 }
 
-/** What a YAML document can parse to. */
-type ParsedYaml =
-  | Readonly<Record<string, unknown>>
-  | readonly unknown[]
-  | string
-  | number
-  | boolean
-  | null;
-
 /**
  * Parse Chart.yaml text, turning a YAML syntax problem into a coded error that
  * names the file.
  * @param text - Chart.yaml content.
  * @param file - Path of the file, for the message.
- * @returns The parsed value, whatever its shape.
+ * @returns The members of the document; a document that is not a mapping has none.
  * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) when it does not parse.
  */
-function parseChartYaml(text: string, file: string): ParsedYaml {
+function parseChartYaml(
+  text: string,
+  file: string,
+): Readonly<Record<string, unknown>> {
   try {
-    return yaml.parse(text) as ParsedYaml;
+    const parsed: unknown = yaml.parse(text);
+    return isRecord(parsed) ? parsed : {};
   } catch (error) {
     throw new SemanticReleaseError(
       `${file} is not valid YAML.`,
@@ -77,8 +72,7 @@ function parseChartYaml(text: string, file: string): ParsedYaml {
  * @returns The typed Chart.yaml fields read from the document.
  */
 function readFields(text: string, file: string): ChartYaml {
-  const parsed = parseChartYaml(text, file);
-  const record = isRecord(parsed) ? parsed : {};
+  const record = parseChartYaml(text, file);
   const { name, version, apiVersion } = record;
   const nameText = ((): string => {
     if (typeof name === 'string') {
@@ -204,7 +198,7 @@ export function setChartVersion(
   const refuse = (message: string, details: string): SemanticReleaseError =>
     new SemanticReleaseError(message, 'EINVALIDCHARTYAML', details);
   const yamlDocument = yaml.parseDocument(rawYaml);
-  const [parseError] = yamlDocument.errors;
+  const parseError = yamlDocument.errors.at(0);
   if (parseError) {
     throw refuse(
       `${file} is not valid YAML.`,

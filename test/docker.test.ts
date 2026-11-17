@@ -5,6 +5,7 @@ import {
   DockerImage,
   dockerRunArgs,
 } from '../src/docker.js';
+import { rejectionOf } from './utils/rejection.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
 
 const make = (
@@ -194,12 +195,9 @@ describe('DockerImage.run', () => {
     const { image, lines } = make(() => {
       throw new Error(`push to ${url} failed`);
     });
-    const failure = await image
-      .run(['push', url])
-      .then(() => undefined)
-      .catch((error: unknown) => error);
+    const failure = await rejectionOf(image.run(['push', url]), Error);
     expect(lines.join('\n')).not.toContain('tok3nvalue');
-    expect((failure as Error).message).not.toContain('tok3nvalue');
+    expect(failure.message).not.toContain('tok3nvalue');
   });
 
   it('with env keeps short values from mangling the message', async () => {
@@ -232,10 +230,10 @@ describe('DockerImage.run', () => {
         { code: 'E_X', status: 9 },
       );
     });
-    const failure = await image
-      .run(['true'], { env: { PW: value } })
-      .then(() => undefined)
-      .catch((error: unknown) => error);
+    const failure = await rejectionOf(
+      image.run(['true'], { env: { PW: value } }),
+      Error,
+    );
     expect(failure).toMatchObject({
       message: 'bad *** and *** and ***',
       code: 'E_X',
@@ -249,14 +247,12 @@ describe('DockerImage.run', () => {
         code: 'ERR_INVALID_ARG_VALUE',
       });
     });
-    const failure = await image
-      .run(['true'], { env: { OCI_PASSWORD: 'sec\u0000ret' } })
-      .then(() => undefined)
-      .catch((error: unknown) => error);
-    expect((failure as Error).message).toContain('(ERR_INVALID_ARG_VALUE)');
-    expect([...lines, (failure as Error).message].join('\n')).not.toContain(
-      'sec',
+    const failure = await rejectionOf(
+      image.run(['true'], { env: { OCI_PASSWORD: 'sec\u0000ret' } }),
+      Error,
     );
+    expect(failure.message).toContain('(ERR_INVALID_ARG_VALUE)');
+    expect([...lines, failure.message].join('\n')).not.toContain('sec');
   });
 
   it('with env scrubs the value from the output of a successful run', async () => {

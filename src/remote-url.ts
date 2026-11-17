@@ -117,9 +117,7 @@ export class RemoteUrl {
    */
   webBase(): string | undefined {
     const scp = SCP_LIKE_URL.exec(this.raw);
-    const parts = scp
-      ? scpParts(scp[1] ?? '', scp[2] ?? '')
-      : urlParts(this.raw);
+    const parts = scp ? scpParts(scp[1], scp[2]) : urlParts(this.raw);
     if (!parts) {
       return undefined;
     }

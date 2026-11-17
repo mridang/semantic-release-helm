@@ -230,6 +230,7 @@ describe('HelmConfig', () => {
 
 describe('HelmConfig with null values from a JSON or YAML config file', () => {
   const fromFile = (json: string): HelmConfig =>
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the tests feed HelmConfig the JSON a config file holds, including null values the type does not allow, and the repository has no schema library to validate them with
     new HelmConfig(JSON.parse(json) as HelmPluginConfig);
 
   it('treats null like an unset option for every option with a default', () => {

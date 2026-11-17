@@ -78,31 +78,39 @@ function passthroughAllExceptReserved(
   );
 }
 
-/** What a YAML document can parse to. */
-type ParsedYaml =
-  | Readonly<Record<string, unknown>>
-  | readonly unknown[]
-  | string
-  | number
-  | boolean
-  | null
-  | undefined;
-
 /**
  * Parse index.yaml text, turning a YAML syntax problem into a coded error that names the file.
  * @param text - The index.yaml content.
  * @param file - Path of the file, for the message.
- * @returns The parsed value, whatever its shape.
- * @throws SemanticReleaseError (`EINVALIDINDEX`) when it does not parse.
+ * @returns The members of the document; an empty document has none.
+ * @throws SemanticReleaseError (`EINVALIDINDEX`) when it does not parse or is
+ * not a YAML mapping.
  * @example
  * ```ts
  * parseIndex('apiVersion: v1\nentries: {}\n', '/repo/gh-pages/index.yaml');
  * ```
  */
-function parseIndex(text: string, file: string): ParsedYaml {
+function parseIndex(
+  text: string,
+  file: string,
+): Readonly<Record<string, unknown>> {
   try {
-    return yaml.parse(text) as ParsedYaml;
+    const parsed: unknown = yaml.parse(text);
+    if (parsed === null || parsed === undefined) {
+      return {};
+    }
+    if (!isRecord(parsed)) {
+      throw new SemanticReleaseError(
+        'The existing Helm index is not a YAML mapping.',
+        'EINVALIDINDEX',
+        `Refusing to overwrite ${file}; fix or remove it.`,
+      );
+    }
+    return parsed;
   } catch (error) {
+    if (error instanceof SemanticReleaseError) {
+      throw error;
+    }
     throw new SemanticReleaseError(
       `${file} is not valid YAML.`,
       'EINVALIDINDEX',
@@ -185,16 +193,6 @@ export class ChartRepository {
       return new ChartRepository(file, {}, {});
     }
     const parsed = parseIndex(await fs.readFile(file, 'utf8'), file);
-    if (parsed === null || parsed === undefined) {
-      return new ChartRepository(file, {}, {});
-    }
-    if (!isRecord(parsed)) {
-      throw new SemanticReleaseError(
-        'The existing Helm index is not a YAML mapping.',
-        'EINVALIDINDEX',
-        `Refusing to overwrite ${file}; fix or remove it.`,
-      );
-    }
     const entries = parsed.entries ?? {};
     if (!isRecord(entries)) {
       throw new SemanticReleaseError(

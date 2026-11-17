@@ -16,13 +16,28 @@ import { OciRegistry } from './oci-registry.js';
 import { HelmConfig } from './plugin-config.js';
 import { redactCredentials } from './utils/redact.js';
 import type { HelmPluginConfig } from './plugin-config.js';
-import type {
-  PrepareContext,
-  PublishContext,
-  VerifyConditionsContext,
-} from 'semantic-release';
+import type { Logger } from './command-runner.js';
 
 export type { ChartYaml } from './chart.js';
+
+/**
+ * What the plugin reads of a step's context. semantic-release hands every
+ * step a larger context, which is assignable to this one; the release data
+ * is optional here because a step called by other tooling may not have it.
+ */
+interface StepContext {
+  /** Directory of the repository; the process directory when omitted. */
+  readonly cwd?: string;
+  /** Receives the progress lines of the step. */
+  readonly logger: Logger;
+  /** The release being made, once semantic-release has decided it. */
+  readonly nextRelease?: {
+    readonly version?: string;
+    readonly gitTag?: string;
+  };
+  /** The semantic-release options. */
+  readonly options?: { readonly repositoryUrl?: string };
+}
 
 /** Author name for the gh-pages commit when none is configured. */
 const COMMIT_NAME = 'semantic-release-bot';
@@ -37,7 +52,7 @@ const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
  */
 function imagesOf(
   cfg: HelmConfig,
-  context: { readonly logger: PublishContext['logger']; readonly cwd: string },
+  context: { readonly logger: Logger; readonly cwd: string },
 ) {
   return {
     helm: new DockerImage({ ...context, image: cfg.getHelmImage() }),
@@ -53,7 +68,7 @@ function imagesOf(
  */
 async function chartOf(
   cfg: HelmConfig,
-  context: { readonly logger: PublishContext['logger']; readonly cwd: string },
+  context: { readonly logger: Logger; readonly cwd: string },
 ): Promise<Chart> {
   return Chart.open({
     ...context,
@@ -79,7 +94,7 @@ async function chartOf(
  */
 export async function verifyConditions(
   pluginConfig: HelmPluginConfig,
-  context: VerifyConditionsContext,
+  context: StepContext,
 ): Promise<void> {
   const { logger } = context;
   const cwd = context.cwd ?? process.cwd();
@@ -159,7 +174,7 @@ export async function verifyConditions(
  */
 export async function prepare(
   pluginConfig: HelmPluginConfig,
-  context: PrepareContext,
+  context: StepContext,
 ): Promise<void> {
   const { nextRelease, logger } = context;
   const cwd = context.cwd ?? process.cwd();
@@ -209,7 +224,7 @@ export async function prepare(
  */
 async function publishToOci(
   cfg: HelmConfig,
-  context: { readonly logger: PublishContext['logger']; readonly cwd: string },
+  context: { readonly logger: Logger; readonly cwd: string },
   packages: readonly ChartPackage[],
 ): Promise<void> {
   const { logger, cwd } = context;
@@ -271,7 +286,7 @@ async function publishToOci(
  */
 export async function publish(
   pluginConfig: HelmPluginConfig,
-  context: PublishContext,
+  context: StepContext,
 ): Promise<void> {
   const { logger, options, nextRelease } = context;
   const cwd = context.cwd ?? process.cwd();

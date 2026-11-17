@@ -8,6 +8,7 @@ interface InsecureRemote {
   webBase: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the checked-in fixture file has exactly this shape and the repository has no schema library to validate it with
 const insecure = JSON.parse(
   await readFile(
     new URL('fixtures/insecure-remotes.json', import.meta.url),

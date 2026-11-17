@@ -7,7 +7,6 @@ import { ChartPackage } from '../src/chart-package.js';
 import { DockerImage } from '../src/docker.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
 import { withTemporaryDir } from './utils/tmpdir.js';
-import type { ChartYaml } from '../src/chart.js';
 
 /** The pieces a chart needs, with a recording runner. */
 function setup(cwd: string, answer?: Parameters<typeof fakeRunner>[0]) {
@@ -111,7 +110,7 @@ describe('Chart', () => {
       const file = path.join(dir, 'Chart.yaml');
       const opened = await chartAt(dir);
       await opened.withVersion('0.2.0').save();
-      expect(yaml.parse(await fs.readFile(file, 'utf8')) as ChartYaml).toEqual({
+      expect(yaml.parse(await fs.readFile(file, 'utf8'))).toEqual({
         apiVersion: 'v2',
         name: 'demo',
         version: '0.2.0',
@@ -134,7 +133,7 @@ describe('Chart', () => {
       const opened = await chartAt(dir);
       await opened.save();
       const text = await fs.readFile(path.join(dir, 'Chart.yaml'), 'utf8');
-      expect(yaml.parse(text) as ChartYaml).toEqual({
+      expect(yaml.parse(text)).toEqual({
         apiVersion: 'v2',
         name: 'demo',
         version: '9.9.9',
