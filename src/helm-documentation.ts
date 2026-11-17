@@ -8,13 +8,13 @@ import fs from 'node:fs/promises';
  * replaced with the Go template call before running helm-docs.
  */
 export const VALUES_TABLE_TEMPLATE = '{{ template "chart.valuesTable" . }}';
-const VALUES_TABLE_START_RE = /<!--\s*render\.chart\.valuesTable\s*-->/i;
-const VALUES_TABLE_END_RE = /<!--\s*end\.chart\.valuesTable\s*-->/i;
+const VALUES_TABLE_START_RE = /<!--\s*render\.chart\.valuesTable\s*-->/iu;
+const VALUES_TABLE_END_RE = /<!--\s*end\.chart\.valuesTable\s*-->/iu;
 const VALUES_TABLE_BLOCK_RE = new RegExp(
   VALUES_TABLE_START_RE.source +
     String.raw`[\s\S]*?` +
     VALUES_TABLE_END_RE.source,
-  'gi',
+  'giu',
 );
 
 /**
@@ -23,10 +23,7 @@ const VALUES_TABLE_BLOCK_RE = new RegExp(
  *   {{ template "chart.valuesTable" . }}
  *   <!-- end.chart.valuesTable -->.
  */
-export function normalizeReadmeValuesTableContent(content: string): {
-  updated: string;
-  changed: boolean;
-} {
+export function normalizeReadmeValuesTableContent(content: string) {
   const updated = content.replaceAll(VALUES_TABLE_BLOCK_RE, (block) => {
     const start =
       VALUES_TABLE_START_RE.exec(block)?.[0] ??
@@ -48,9 +45,13 @@ export async function normalizeReadmeValuesTableFile(absPath: string): Promise<{
     .access(absPath)
     .then(() => true)
     .catch(() => false);
-  if (!exists) return { changed: false };
+  if (!exists) {
+    return { changed: false };
+  }
   const original = await fs.readFile(absPath, 'utf8');
   const { updated, changed } = normalizeReadmeValuesTableContent(original);
-  if (changed) await fs.writeFile(absPath, updated, 'utf8');
+  if (changed) {
+    await fs.writeFile(absPath, updated, 'utf8');
+  }
   return { changed };
 }

@@ -1,10 +1,11 @@
 /**
  * @file Creates and manages temporary git worktrees and the commits made inside them.
  */
-import { runLogged, type CommandContext } from './command-runner.js';
-import type { Branch } from './remote.js';
+import { runLogged } from './command-runner.js';
 import { statusOf } from './utils/error.js';
-import { run as execRun } from './utils/exec.js';
+import { run } from './utils/exec.js';
+import type { CommandContext } from './command-runner.js';
+import type { Branch } from './remote.js';
 
 /**
  * Who a commit is attributed to.
@@ -150,7 +151,7 @@ export class Worktree {
    */
   private async hasStagedChanges(): Promise<boolean> {
     try {
-      await (this.options.run ?? execRun)(
+      await (this.options.run ?? run)(
         'git',
         ['-C', this.options.directory, 'diff', '--cached', '--quiet'],
         { cwd: this.options.cwd },
@@ -171,7 +172,7 @@ export class Worktree {
    */
   private async git(args: readonly string[]): Promise<string> {
     return runLogged(
-      this.options.run ?? execRun,
+      this.options.run ?? run,
       'git',
       args,
       { cwd: this.options.cwd },

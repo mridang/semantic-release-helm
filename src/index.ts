@@ -3,11 +3,6 @@
  */
 import { mkdir } from 'node:fs/promises';
 import SemanticReleaseError from '@semantic-release/error';
-import type {
-  PrepareContext,
-  PublishContext,
-  VerifyConditionsContext,
-} from 'semantic-release';
 import { Chart } from './chart.js';
 import { ChartPackage } from './chart-package.js';
 import { assertDockerAvailable, DockerImage } from './docker.js';
@@ -18,9 +13,14 @@ import {
   verifyGhPages,
 } from './gh-pages.js';
 import { OciRegistry } from './oci-registry.js';
-import type { HelmPluginConfig } from './plugin-config.js';
 import { HelmConfig } from './plugin-config.js';
 import { redactCredentials } from './utils/redact.js';
+import type { HelmPluginConfig } from './plugin-config.js';
+import type {
+  PrepareContext,
+  PublishContext,
+  VerifyConditionsContext,
+} from 'semantic-release';
 
 export type { ChartYaml } from './chart.js';
 
@@ -38,7 +38,7 @@ const COMMIT_EMAIL = 'semantic-release-bot@martynus.net';
 function imagesOf(
   cfg: HelmConfig,
   context: { readonly logger: PublishContext['logger']; readonly cwd: string },
-): { readonly helm: DockerImage; readonly docs: DockerImage } {
+) {
   return {
     helm: new DockerImage({ ...context, image: cfg.getHelmImage() }),
     docs: new DockerImage({ ...context, image: cfg.getDocsImage() }),
@@ -112,8 +112,9 @@ export async function verifyConditions(
   if (cfg.isGhEnabled()) {
     const url = cfg.getGhUrl();
     logger.log(
-      `verifyConditions: GH Pages mode (default). Resolved URL: ` +
-        (url ?? '(none; index will be written without --url)'),
+      `verifyConditions: GH Pages mode (default). Resolved URL: ${
+        url ?? '(none; index will be written without --url)'
+      }`,
     );
     await verifyGhPages(here, cfg.getGhRepo());
     logger.log(
@@ -228,6 +229,7 @@ async function publishToOci(
     helm: imagesOf(cfg, context).helm,
     cwd,
   });
+  // eslint-disable-next-line functional/no-loop-statements -- the packages are pushed one after the other
   for (const pkg of packages) {
     const published = await registry.publish(pkg);
     if (published.digest !== undefined) {

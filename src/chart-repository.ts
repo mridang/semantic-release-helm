@@ -4,11 +4,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import yaml from 'yaml';
-import type { Chart } from './chart.js';
-import type { ChartPackage } from './chart-package.js';
 import SemanticReleaseError from '@semantic-release/error';
 import { messageOf } from './utils/error.js';
 import { isRecord } from './utils/object.js';
+import type { ChartPackage } from './chart-package.js';
+import type { Chart } from './chart.js';
 
 /**
  * Remove trailing slashes, and leading ones too when asked. Equivalent to the
@@ -22,15 +22,12 @@ import { isRecord } from './utils/object.js';
  * ```
  */
 function trimSlashes(text: string, leading: boolean): string {
-  let start = 0;
-  let end = text.length;
-  while (leading && start < end && text.charAt(start) === '/') {
-    start += 1;
-  }
-  while (end > start && text.charAt(end - 1) === '/') {
-    end -= 1;
-  }
-  return text.slice(start, end);
+  const chars = Array.from(text, (char) => char);
+  const first = leading ? chars.findIndex((char) => char !== '/') : 0;
+  const last = chars.findLastIndex((char) => char !== '/');
+  return first === -1 || last < first
+    ? ''
+    : chars.slice(first, last + 1).join('');
 }
 
 /**
@@ -81,6 +78,16 @@ function passthroughAllExceptReserved(
   );
 }
 
+/** What a YAML document can parse to. */
+type ParsedYaml =
+  | Readonly<Record<string, unknown>>
+  | readonly unknown[]
+  | string
+  | number
+  | boolean
+  | null
+  | undefined;
+
 /**
  * Parse index.yaml text, turning a YAML syntax problem into a coded error that names the file.
  * @param text - The index.yaml content.
@@ -92,9 +99,9 @@ function passthroughAllExceptReserved(
  * parseIndex('apiVersion: v1\nentries: {}\n', '/repo/gh-pages/index.yaml');
  * ```
  */
-function parseIndex(text: string, file: string): unknown {
+function parseIndex(text: string, file: string): ParsedYaml {
   try {
-    return yaml.parse(text);
+    return yaml.parse(text) as ParsedYaml;
   } catch (error) {
     throw new SemanticReleaseError(
       `${file} is not valid YAML.`,

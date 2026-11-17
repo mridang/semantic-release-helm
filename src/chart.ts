@@ -6,20 +6,20 @@ import path from 'node:path';
 import { inspect } from 'node:util';
 import SemanticReleaseError from '@semantic-release/error';
 import yaml from 'yaml';
-import type { CommandContext } from './command-runner.js';
 import { ChartPackage } from './chart-package.js';
-import type { DockerImage } from './docker.js';
 import { normalizeReadmeValuesTableFile } from './helm-documentation.js';
 import { messageOf } from './utils/error.js';
 import { isRecord } from './utils/object.js';
+import type { DockerImage } from './docker.js';
+import type { CommandContext } from './command-runner.js';
 
 /**
  * Schema for Chart.yaml. Additional keys are permitted and preserved. Only a
  * minimal subset is typed explicitly to avoid needless churn when Helm adds
  * new fields.
  */
-const WHITESPACE = /\s/;
-const TRAILING_NEWLINE = /\r?\n$/;
+const WHITESPACE = /\s/u;
+const TRAILING_NEWLINE = /\r?\n$/u;
 
 export interface ChartYaml {
   apiVersion?: string;
@@ -40,6 +40,15 @@ export interface ChartOptions extends CommandContext {
   readonly docs: DockerImage;
 }
 
+/** What a YAML document can parse to. */
+type ParsedYaml =
+  | Readonly<Record<string, unknown>>
+  | readonly unknown[]
+  | string
+  | number
+  | boolean
+  | null;
+
 /**
  * Parse Chart.yaml text, turning a YAML syntax problem into a coded error that
  * names the file.
@@ -48,9 +57,9 @@ export interface ChartOptions extends CommandContext {
  * @returns The parsed value, whatever its shape.
  * @throws SemanticReleaseError (`EINVALIDCHARTYAML`) when it does not parse.
  */
-function parseChartYaml(text: string, file: string): unknown {
+function parseChartYaml(text: string, file: string): ParsedYaml {
   try {
-    return yaml.parse(text);
+    return yaml.parse(text) as ParsedYaml;
   } catch (error) {
     throw new SemanticReleaseError(
       `${file} is not valid YAML.`,
@@ -71,14 +80,16 @@ function readFields(text: string, file: string): ChartYaml {
   const parsed = parseChartYaml(text, file);
   const record = isRecord(parsed) ? parsed : {};
   const { name, version, apiVersion } = record;
-  let nameText = '';
-  if (typeof name === 'string') {
-    nameText = name;
-  } else if (name !== undefined && name !== null) {
-    nameText = inspect(name);
-  } else {
-    // No name: it stays empty and is reported where the chart is validated.
-  }
+  const nameText = ((): string => {
+    if (typeof name === 'string') {
+      return name;
+    }
+    if (name === undefined || name === null) {
+      // No name: it stays empty and is reported where the chart is validated.
+      return '';
+    }
+    return inspect(name);
+  })();
   return {
     ...record,
     name: nameText,
@@ -135,7 +146,7 @@ export function templateSetArgs(
  * @returns A pattern matching the text exactly.
  */
 function escapeForRegExp(text: string): string {
-  return text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  return text.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
 }
 
 /**
@@ -230,9 +241,10 @@ export function setChartVersion(
   }
   if (
     existing.anchor &&
-    new RegExp(String.raw`\*${escapeForRegExp(existing.anchor)}(?![\w-])`).test(
-      rawYaml,
-    )
+    new RegExp(
+      String.raw`\*${escapeForRegExp(existing.anchor)}(?![\w-])`,
+      'u',
+    ).test(rawYaml)
   ) {
     throw refuse(
       `The version in ${file} is shared through a YAML anchor.`,
@@ -342,7 +354,7 @@ export class Chart {
    * A copy of every field of Chart.yaml, for passing metadata on.
    * @returns The fields.
    */
-  metadata(): Record<string, unknown> {
+  metadata() {
     return { ...this.fields };
   }
 

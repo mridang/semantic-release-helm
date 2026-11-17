@@ -48,15 +48,15 @@ describe('redactCredentials', () => {
 const SCHEME = String.raw`([a-z][a-z0-9+.-]*:\/\/)`;
 const CREDENTIALS_WITH_PASSWORD = new RegExp(
   [SCHEME, String.raw`[^\s/@:]*:\S*@`].join(''),
-  'gi',
+  'giu',
 );
 const CREDENTIALS_WITHOUT_PASSWORD = new RegExp(
   [SCHEME, String.raw`[^\s/@:]+@`].join(''),
-  'gi',
+  'giu',
 );
 const ANY_CREDENTIALS = new RegExp(
   [SCHEME, String.raw`[^\s/@]*@`].join(''),
-  'gi',
+  'giu',
 );
 
 /** The redaction as it was before the scan became linear, kept to prove equivalence. */
@@ -66,17 +66,19 @@ function redactWithRegexes(text: string): string {
     .replaceAll(CREDENTIALS_WITHOUT_PASSWORD, '$1***@')
     .replaceAll(
       new RegExp(
-        '([?&](?:access_token|token|' +
-          ['pass', 'word'].join('') +
+        [
+          '([?&](?:access_token|token|',
+          ['pass', 'word'].join(''),
           String.raw`|private_token)=)[^&\s#'"]+`,
-        'gi',
+        ].join(''),
+        'giu',
       ),
       '$1***',
     )
-    .replaceAll(/\b((?:proxy-)?authorization)\s*:[^\r\n]*/gi, '$1: ***')
-    .replaceAll(/\bbearer\s+[\w.~+/=-]+/gi, 'Bearer ***')
+    .replaceAll(/\b((?:proxy-)?authorization)\s*:[^\r\n]*/giu, '$1: ***')
+    .replaceAll(/\bbearer\s+[\w.~+/=-]+/giu, 'Bearer ***')
     .replaceAll(
-      /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|glpat-[A-Za-z0-9_-]{16,})/g,
+      /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|glpat-[A-Za-z0-9_-]{16,})/gu,
       '***',
     );
 }
@@ -116,6 +118,7 @@ const PIECES = [
 function generator(seed: number): () => number {
   let state = seed;
   return () => {
+    // eslint-disable-next-line no-bitwise -- the generator is defined with a 32-bit unsigned shift
     state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
     return state / 4_294_967_296;
   };

@@ -2,15 +2,13 @@
  * @file Builds docker run arguments and executes tooling commands inside containers.
  */
 import SemanticReleaseError from '@semantic-release/error';
-import {
-  redactError,
-  runLogged,
-  type CommandContext,
-} from './command-runner.js';
+import { redactError, runLogged } from './command-runner.js';
 import { codeOf, messageOf, statusOf } from './utils/error.js';
-import { run as execRun, type Runner } from './utils/exec.js';
+import { run } from './utils/exec.js';
 import { isRecord } from './utils/object.js';
 import { redactCredentials } from './utils/redact.js';
+import type { Runner } from './utils/exec.js';
+import type { CommandContext } from './command-runner.js';
 
 /**
  * A host directory mounted into the container.
@@ -173,7 +171,7 @@ export async function assertDockerAvailable(
 ): Promise<void> {
   try {
     await runLogged(
-      context.run ?? execRun,
+      context.run ?? run,
       'docker',
       ['version'],
       { cwd: context.cwd },
@@ -220,7 +218,7 @@ export class DockerImage {
   async pull(): Promise<DockerImage> {
     try {
       await runLogged(
-        this.options.run ?? execRun,
+        this.options.run ?? run,
         'docker',
         ['pull', this.options.image],
         { cwd: this.options.cwd },
@@ -253,7 +251,7 @@ export class DockerImage {
     options: DockerRunOptions = {},
   ): Promise<string> {
     const env = options.env ?? {};
-    const base = this.options.run ?? execRun;
+    const base = this.options.run ?? run;
     const hasEnv = Object.keys(env).length > 0;
     const runner: Runner = async (file, runArgs, runOptions) => {
       const output = await base(file, runArgs, runOptions);

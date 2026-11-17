@@ -2,10 +2,10 @@
  * @file Packages a Helm chart directory into a versioned .tgz archive and reports its digest.
  */
 import crypto from 'node:crypto';
-import type { Dirent } from 'node:fs';
 import fs from 'node:fs/promises';
-import { isRecord } from './utils/object.js';
 import path from 'node:path';
+import { isRecord } from './utils/object.js';
+import type { Dirent } from 'node:fs';
 
 /**
  * A packaged chart: a `.tgz` file named `<name>-<version>.tgz`.
@@ -15,8 +15,8 @@ import path from 'node:path';
  */
 /** Locale-aware comparer, built once. */
 const collator = new Intl.Collator();
-const OPTIONAL_VERSION_TGZ_SUFFIX = /(-\d+\.\d+\.\d+)?\.tgz$/;
-const VERSION_TGZ_SUFFIX = /-(\d+\.\d+\.\d+)\.tgz$/;
+const OPTIONAL_VERSION_TGZ_SUFFIX = /(-\d+\.\d+\.\d+)?\.tgz$/u;
+const VERSION_TGZ_SUFFIX = /-(\d+\.\d+\.\d+)\.tgz$/u;
 
 interface ChartIdentity {
   readonly name: string;
@@ -82,15 +82,14 @@ export class ChartPackage {
    * ```
    */
   static async find(directory: string): Promise<readonly ChartPackage[]> {
-    let entries: Dirent[];
-    try {
-      entries = await fs.readdir(directory, { withFileTypes: true });
-    } catch (error) {
-      if (isRecord(error) && error.code === 'ENOENT') {
-        return [];
-      }
-      throw error;
-    }
+    const entries = await fs
+      .readdir(directory, { withFileTypes: true })
+      .catch((error: unknown): Dirent[] => {
+        if (isRecord(error) && error.code === 'ENOENT') {
+          return [];
+        }
+        throw error;
+      });
     return entries
       .filter((entry) => entry.isFile() && entry.name.endsWith('.tgz'))
       .map((entry) => entry.name)

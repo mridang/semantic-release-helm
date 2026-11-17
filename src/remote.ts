@@ -1,8 +1,9 @@
 /**
  * @file Queries and updates git remotes and branches for the release.
  */
-import { runLogged, type CommandContext } from './command-runner.js';
-import { run as execRun } from './utils/exec.js';
+import { runLogged } from './command-runner.js';
+import { run } from './utils/exec.js';
+import type { CommandContext } from './command-runner.js';
 import type { RemoteUrl } from './remote-url.js';
 
 /**
@@ -66,7 +67,7 @@ export class Remote {
    */
   async isReachable(): Promise<boolean> {
     try {
-      await (this.options.run ?? execRun)(
+      await (this.options.run ?? run)(
         'git',
         ['ls-remote', '--heads', this.options.name],
         { cwd: this.options.cwd },
@@ -115,7 +116,7 @@ export class Remote {
    */
   private async git(args: readonly string[]): Promise<string> {
     return runLogged(
-      this.options.run ?? execRun,
+      this.options.run ?? run,
       'git',
       args,
       { cwd: this.options.cwd },

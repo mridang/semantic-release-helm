@@ -5,8 +5,8 @@ import SemanticReleaseError from '@semantic-release/error';
 import { codeOf, messageOf } from './utils/error.js';
 import { redactCredentials } from './utils/redact.js';
 import { isRecord, stringAt } from './utils/object.js';
-import type { ExecOptions, Runner } from './utils/exec.js';
 import { quoteWord } from './utils/shell.js';
+import type { ExecOptions, Runner } from './utils/exec.js';
 
 /**
  * The two logging methods the plugin uses. Semantic-release's logger

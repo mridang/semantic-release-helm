@@ -2,12 +2,14 @@
  * @file Wraps the git operations the release needs, such as branches, tags and pushes.
  */
 import SemanticReleaseError from '@semantic-release/error';
-import { runLogged, type CommandContext } from './command-runner.js';
-import { Remote, type Branch } from './remote.js';
+import { runLogged } from './command-runner.js';
+import { Remote } from './remote.js';
 import { RemoteUrl } from './remote-url.js';
 import { Worktree } from './worktree.js';
-import { run as execRun } from './utils/exec.js';
+import { run } from './utils/exec.js';
 import { redactCredentials } from './utils/redact.js';
+import type { Branch } from './remote.js';
+import type { CommandContext } from './command-runner.js';
 
 /**
  * A git repository on disk. It hands out its remotes and working trees.
@@ -130,7 +132,7 @@ export class GitRepository {
    */
   private async hasRef(ref: string): Promise<boolean> {
     try {
-      await (this.context.run ?? execRun)(
+      await (this.context.run ?? run)(
         'git',
         ['show-ref', '--verify', '--quiet', ref],
         { cwd: this.context.cwd },
@@ -148,7 +150,7 @@ export class GitRepository {
    */
   private async git(args: readonly string[]): Promise<string> {
     return runLogged(
-      this.context.run ?? execRun,
+      this.context.run ?? run,
       'git',
       args,
       { cwd: this.context.cwd },

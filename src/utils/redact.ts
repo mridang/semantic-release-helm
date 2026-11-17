@@ -11,7 +11,7 @@
  * @param text - Text that may contain credentials.
  * @returns The text with every credential replaced by `***`.
  */
-const URL_BOUNDARY_CHARACTERS = /[\s/@]/;
+const URL_BOUNDARY_CHARACTERS = /[\s/@]/u;
 
 export function redactCredentials(text: string): string {
   return maskUserinfo(
@@ -19,21 +19,21 @@ export function redactCredentials(text: string): string {
     tokenUserinfoEnd,
   )
     .replaceAll(
-      /([?&](?:access_token|token|password|private_token)=)[^&\s#'"]+/gi,
+      /([?&](?:access_token|token|password|private_token)=)[^&\s#'"]+/giu,
       '$1***',
     )
-    .replaceAll(/\b((?:proxy-)?authorization)\s*:[^\r\n]*/gi, '$1: ***')
-    .replaceAll(/\bbearer\s+[\w.~+/=-]+/gi, 'Bearer ***')
+    .replaceAll(/\b((?:proxy-)?authorization)\s*:[^\r\n]*/giu, '$1: ***')
+    .replaceAll(/\bbearer\s+[\w.~+/=-]+/giu, 'Bearer ***')
     .replaceAll(
-      /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|glpat-[A-Za-z0-9_-]{16,})/g,
+      /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|glpat-[A-Za-z0-9_-]{16,})/gu,
       '***',
     );
 }
 
-const SCHEME_CHAR = /[a-z0-9+.-]/i;
-const LETTER = /[a-z]/i;
-const SEPARATOR = /[\s/@:]/;
-const WHITESPACE = /\s/;
+const SCHEME_CHAR = /[a-z0-9+.-]/iu;
+const LETTER = /[a-z]/iu;
+const SEPARATOR = /[\s/@:]/u;
+const WHITESPACE = /\s/u;
 
 /**
  * Whether a URL scheme ends at `index`: the run of scheme characters just before it holds a letter,
@@ -43,7 +43,9 @@ const WHITESPACE = /\s/;
  * @returns True when a scheme precedes the index.
  */
 function hasSchemeBefore(text: string, index: number): boolean {
+  // eslint-disable-next-line functional/no-let -- the scan is one linear pass over the text and must not recurse
   let found = false;
+  // eslint-disable-next-line functional/no-let,functional/no-loop-statements -- the scan is one linear pass over the text and must not recurse
   for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
     const char = text.charAt(cursor);
     if (!SCHEME_CHAR.test(char)) {
@@ -71,9 +73,13 @@ export function maskUserinfo(
   text: string,
   userinfoEnd: (text: string, from: number) => number,
 ): string {
+  // eslint-disable-next-line functional/no-let -- the scan is one linear pass over the text and must not recurse
   let result = '';
+  // eslint-disable-next-line functional/no-let -- the scan is one linear pass over the text and must not recurse
   let cursor = 0;
+  // eslint-disable-next-line functional/no-let -- the scan is one linear pass over the text and must not recurse
   let from = 0;
+  // eslint-disable-next-line functional/no-loop-statements -- the scan is one linear pass over the text and must not recurse
   for (;;) {
     const marker = text.indexOf('://', from);
     if (marker === -1) {
@@ -99,7 +105,9 @@ export function maskUserinfo(
  * @returns The index after the `@`, or -1.
  */
 export function anyUserinfoEnd(text: string, from: number): number {
+  // eslint-disable-next-line functional/no-let -- the scan is one linear pass over the text and must not recurse
   let index = from;
+  // eslint-disable-next-line functional/no-loop-statements -- the scan is one linear pass over the text and must not recurse
   while (
     index < text.length &&
     !URL_BOUNDARY_CHARACTERS.test(text.charAt(index))
@@ -116,7 +124,9 @@ export function anyUserinfoEnd(text: string, from: number): number {
  * @returns The index after the `@`, or -1.
  */
 function tokenUserinfoEnd(text: string, from: number): number {
+  // eslint-disable-next-line functional/no-let -- the scan is one linear pass over the text and must not recurse
   let index = from;
+  // eslint-disable-next-line functional/no-loop-statements -- the scan is one linear pass over the text and must not recurse
   while (index < text.length && !SEPARATOR.test(text.charAt(index))) {
     index += 1;
   }
@@ -130,10 +140,14 @@ function tokenUserinfoEnd(text: string, from: number): number {
  * @returns A function to give to {@link maskUserinfo}; use one per text.
  */
 function passwordUserinfoEnds(): (text: string, from: number) => number {
+  // eslint-disable-next-line functional/no-let -- the scan is one linear pass over the text and must not recurse
   let runEnd = -1;
+  // eslint-disable-next-line functional/no-let -- the scan is one linear pass over the text and must not recurse
   let lastAt = -1;
   return (text, from) => {
+    // eslint-disable-next-line functional/no-let -- the scan is one linear pass over the text and must not recurse
     let index = from;
+    // eslint-disable-next-line functional/no-loop-statements -- the scan is one linear pass over the text and must not recurse
     while (index < text.length && !SEPARATOR.test(text.charAt(index))) {
       index += 1;
     }
@@ -143,6 +157,7 @@ function passwordUserinfoEnds(): (text: string, from: number) => number {
     const start = index + 1;
     if (start >= runEnd) {
       runEnd = start;
+      // eslint-disable-next-line functional/no-loop-statements -- the scan is one linear pass over the text and must not recurse
       while (runEnd < text.length && !WHITESPACE.test(text.charAt(runEnd))) {
         runEnd += 1;
       }

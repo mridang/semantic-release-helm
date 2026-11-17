@@ -98,8 +98,8 @@ describe('Worktree with real git', () => {
         logger,
         cwd: dir,
       });
-      expect(await tree.remove()).toBe(true);
-      expect(await tree.remove()).toBe(false);
+      const removed = [await tree.remove(), await tree.remove()];
+      expect(removed).toEqual([true, false]);
     }),
   );
 });

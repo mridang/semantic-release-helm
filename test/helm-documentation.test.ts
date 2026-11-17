@@ -1,7 +1,7 @@
-import { expect } from '@jest/globals';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { expect } from '@jest/globals';
 import {
   normalizeReadmeValuesTableContent,
   normalizeReadmeValuesTableFile,
@@ -41,7 +41,8 @@ test('normalizeReadmeValuesTableContent handles multiple blocks and odd spacing'
 
   expect(changed).toBe(true);
   expect(
-    updated.match(/{{\s*template\s*"chart\.valuesTable"\s*\.\s*}}/g)?.length,
+    updated.match(/\{\{\s*template\s*"chart\.valuesTable"\s*\.\s*\}\}/gu)
+      ?.length,
   ).toBe(2);
 });
 

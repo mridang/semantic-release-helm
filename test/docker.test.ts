@@ -176,8 +176,9 @@ describe('DockerImage.run', () => {
     expect(args).toContain('--workdir=/work');
     expect(args).toContain('--volume=/data:/mnt:ro');
     expect(args).toContain('--add-host=db:10.0.0.1');
-    expect(args.join(' ')).not.toContain('/repo');
-    expect(args.join(' ')).not.toContain('host.docker.internal');
+    const joined = args.join(' ');
+    expect(joined).not.toContain('/repo');
+    expect(joined).not.toContain('host.docker.internal');
   });
 
   it('logs the runner error message and rethrows', async () => {
