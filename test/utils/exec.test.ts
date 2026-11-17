@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+
 type Callback = (error: unknown, stdout: unknown, stderr: unknown) => void;
 
 /** An unset value, declared without a literal `undefined` so it can be passed explicitly. */
-let absent: undefined;
+// eslint-disable-next-line sonarjs/no-undefined-assignment -- the tests need an explicit undefined to pass as an option
+const absent = undefined;
 const stdin = { on: jest.fn(), end: jest.fn() };
 const execFileMock =
   jest.fn<
@@ -14,6 +16,7 @@ const execFileMock =
     ) => { stdin: typeof stdin }
   >();
 
+// eslint-disable-next-line tslop/no-module-mocking -- run() imports execFile from node:child_process directly, so the module is the only seam
 jest.unstable_mockModule('node:child_process', () => ({
   execFile: execFileMock,
 }));
@@ -33,12 +36,12 @@ function finishWith(error: unknown, stdout: unknown, stderr: unknown): void {
 /**
  * The error a failed command rejects with.
  */
-async function rejection(promise: Promise<string>): Promise<unknown> {
+async function rejection(promise: Promise<string>): Promise<Error | undefined> {
   try {
     await promise;
     return undefined;
   } catch (error: unknown) {
-    return error;
+    return error instanceof Error ? error : new Error(String(error));
   }
 }
 

@@ -1,9 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { pathExists } from './utils/fs.js';
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
 import { GitRepository } from '../src/git-repository.js';
+import { pathExists } from './utils/fs.js';
 import { git, initRepo } from './utils/git.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
 import { withTemporaryDir } from './utils/tmpdir.js';
@@ -140,8 +140,11 @@ describe('GitRepository with real git', () => {
       await remote.push(worktree.branch);
       const subject = await git(bare, 'log', '-1', '--format=%s', 'pages');
       expect(subject.trim()).toBe('m');
-      expect(await repository.removeWorktree(wt)).toBe(true);
-      expect(await repository.removeWorktree(wt)).toBe(false);
+      const removed = [
+        await repository.removeWorktree(wt),
+        await repository.removeWorktree(wt),
+      ];
+      expect(removed).toEqual([true, false]);
     }),
   );
 

@@ -1,16 +1,16 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import yaml from 'yaml';
+import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { Chart } from '../src/chart.js';
 import { ChartPackage } from '../src/chart-package.js';
-import type { ChartEntry } from '../src/chart-repository.js';
 import { ChartRepository } from '../src/chart-repository.js';
 import { DockerImage } from '../src/docker.js';
 import { isRecord } from '../src/utils/object.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
-import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { withTemporaryDir } from './utils/tmpdir.js';
 import { sha256OfFile } from './utils/filehash.js';
+import type { ChartEntry } from '../src/chart-repository.js';
 
 /** A chart in a directory, with images that are never run. */
 async function chartAt(dir: string): Promise<Chart> {

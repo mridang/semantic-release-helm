@@ -8,7 +8,8 @@ import { fakeRunner, recordingLogger } from './utils/runner.js';
 const PASSWORD = 'placeholder$x "q" \'z\' `id`';
 const PKG = ChartPackage.at('/repo/dist/charts/app-1.0.0.tgz');
 /** An unset option, declared without a literal `undefined` so it can be passed explicitly. */
-let absent: undefined;
+// eslint-disable-next-line sonarjs/no-undefined-assignment -- the tests need an explicit undefined to pass as an option
+const absent = undefined;
 
 const make = (
   change: Partial<ConstructorParameters<typeof OciRegistry>[0]> = {},

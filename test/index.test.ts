@@ -1,4 +1,7 @@
 // file: test/index.integration.test.ts
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {
   describe,
   it,
@@ -8,16 +11,13 @@ import {
   beforeEach,
   afterEach,
 } from '@jest/globals';
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { copyDirectory, pathExists } from './utils/fs.js';
-import { execAsync, execFileAsync } from './utils/exec.js';
-import type { StartedTestContainer } from 'testcontainers';
 import { parse, stringify } from 'yaml';
 
 // noinspection ES6PreferShortImport
 import { verifyConditions, prepare, publish } from '../src/index.js';
+import { copyDirectory, pathExists } from './utils/fs.js';
+import { execAsync, execFileAsync } from './utils/exec.js';
+import type { StartedTestContainer } from 'testcontainers';
 import type {
   VerifyConditionsContext,
   PrepareContext,
@@ -27,14 +27,14 @@ import type { HelmPluginConfig } from '../src/plugin-config.js';
 
 /** Locale-aware comparer, built once. */
 const collator = new Intl.Collator();
-const LISTENING_ON = /listening on/;
-const CHART_VERSION_0_2_0 = /version:\s*0\.2\.0/;
-const GH_PAGES_BRANCH = /gh-pages/;
-const GH_PAGES_HEAD_REF = /refs\/heads\/gh-pages/;
-const APP_0_5_0_ARCHIVE = /app-0\.5\.0\.tgz$/;
-const APP_2_0_0_ARCHIVE = /app-2\.0\.0\.tgz$/;
-const APP_9_0_0_ARCHIVE = /app-9\.0\.0\.tgz$/;
-const STEP_NAME = /(lint|template|helm-docs|package)/;
+const LISTENING_ON = /listening on/u;
+const CHART_VERSION_0_2_0 = /version:\s*0\.2\.0/u;
+const GH_PAGES_BRANCH = /gh-pages/u;
+const GH_PAGES_HEAD_REF = /refs\/heads\/gh-pages/u;
+const APP_0_5_0_ARCHIVE = /app-0\.5\.0\.tgz$/u;
+const APP_2_0_0_ARCHIVE = /app-2\.0\.0\.tgz$/u;
+const APP_9_0_0_ARCHIVE = /app-9\.0\.0\.tgz$/u;
+const STEP_NAME = /(lint|template|helm-docs|package)/u;
 
 const HELM_IMAGE = process.env.HELM_IMAGE ?? 'alpine/helm:3.15.2';
 const DOCS_IMAGE = process.env.DOCS_IMAGE ?? 'jnorwood/helm-docs:v1.14.2';

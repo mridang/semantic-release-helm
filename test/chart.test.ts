@@ -1,13 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import yaml from 'yaml';
-import type { ChartYaml } from '../src/chart.js';
+import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { Chart, setChartVersion, templateSetArgs } from '../src/chart.js';
 import { ChartPackage } from '../src/chart-package.js';
 import { DockerImage } from '../src/docker.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
-import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { withTemporaryDir } from './utils/tmpdir.js';
+import type { ChartYaml } from '../src/chart.js';
 
 /** The pieces a chart needs, with a recording runner. */
 function setup(cwd: string, answer?: Parameters<typeof fakeRunner>[0]) {

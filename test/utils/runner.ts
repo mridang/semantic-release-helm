@@ -15,10 +15,7 @@ export interface RecordedCall {
  * @param answer - Produces the stdout for a call, or throws to fail it.
  * @returns The runner and the list of calls it has received.
  */
-export function fakeRunner(answer: (call: RecordedCall) => string = () => ''): {
-  readonly run: Runner;
-  readonly calls: RecordedCall[];
-} {
+export function fakeRunner(answer: (call: RecordedCall) => string = () => '') {
   const calls: RecordedCall[] = [];
   const run: Runner = async (file, args, options) => {
     const call = { file, args, options };
@@ -32,19 +29,13 @@ export function fakeRunner(answer: (call: RecordedCall) => string = () => ''): {
  * A logger that records everything written to it.
  * @returns The logger and the lines it has received.
  */
-export function recordingLogger(): {
-  readonly logger: {
-    readonly log: (m: string) => void;
-    readonly error: (m: string) => void;
-  };
-  readonly lines: string[];
-} {
+export function recordingLogger() {
   const lines: string[] = [];
   return {
     lines,
     logger: {
-      log: (m) => lines.push(m),
-      error: (m) => lines.push(m),
+      log: (m: string) => lines.push(m),
+      error: (m: string) => lines.push(m),
     },
   };
 }

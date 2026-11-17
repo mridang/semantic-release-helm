@@ -5,7 +5,7 @@ import { redactError, runLogged } from '../src/command-runner.js';
 import { run } from '../src/utils/exec.js';
 import { withTemporaryDir } from './utils/tmpdir.js';
 
-const COMMAND_FAILED_PREFIX = /^Command failed/;
+const COMMAND_FAILED_PREFIX = /^Command failed/u;
 
 function captureConsole() {
   const outChunks: string[] = [];
@@ -72,10 +72,10 @@ describe('runLogged (real runner, full-stream asserts)', () => {
     'failure: logs command, stdout, stderr, and rethrows',
     withTemporaryDir(async (cwd) => {
       const { logger, stdout, stderr } = captureConsole();
-      const code =
+      const code = `${
         String.raw`process.stdout.write("out\n");` +
-        String.raw`process.stderr.write("err\n");` +
-        'process.exit(7);';
+        String.raw`process.stderr.write("err\n");`
+      }process.exit(7);`;
 
       const failure = await runLogged(run, node, ['-e', code], { cwd }, logger)
         .then(() => undefined)
@@ -84,12 +84,13 @@ describe('runLogged (real runner, full-stream asserts)', () => {
       expect(failure).toMatchObject({ status: 7 });
       expect(stdout()).toBe(`$ ${node} -e ${q(code)}\n`);
       const escapedNode = node.replaceAll(
-        /[.*+?^${}()|[\]\\]/g,
+        /[.*+?^${}()|[\]\\]/gu,
         String.raw`\$&`,
       );
       expect(stderr()).toMatch(
         new RegExp(
           String.raw`^Command failed: ${escapedNode} -e [\s\S]*\nout\nerr\n[\s\S]+$`,
+          'u',
         ),
       );
     }),
@@ -106,8 +107,9 @@ describe('runLogged failure output that is only whitespace', () => {
       await expect(
         runLogged(run, node, ['-e', code], { cwd }, logger),
       ).rejects.toThrow();
-      expect(stderr()).toContain('Command failed:');
-      expect(stderr()).toContain('  \n');
+      const output = stderr();
+      expect(output).toContain('Command failed:');
+      expect(output).toContain('  \n');
     }),
   );
 

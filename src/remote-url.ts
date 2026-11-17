@@ -5,11 +5,11 @@ import { anyUserinfoEnd, maskUserinfo } from './utils/redact.js';
  * anything else (an `~/.ssh/config` alias such as `gh-work`, a Windows drive
  * letter, an IPv6 literal) cannot be vouched for as a web host.
  */
-const SCP_LIKE_URL = /^(?:[^@/:]+@)?([^:/@]+):(?!\/\/)(.+)$/;
-const GIT_SUFFIX = /\.git$/;
+const SCP_LIKE_URL = /^(?:[^@/:]+@)?([^:/@]+):(?!\/\/)(.+)$/u;
+const GIT_SUFFIX = /\.git$/u;
 
 const WEB_HOST =
-  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i;
+  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/iu;
 
 /**
  * Remove trailing slashes, and leading ones too when asked. Equivalent to the
@@ -23,15 +23,12 @@ const WEB_HOST =
  * ```
  */
 function trimSlashes(text: string, leading: boolean): string {
-  let start = 0;
-  let end = text.length;
-  while (leading && start < end && text.charAt(start) === '/') {
-    start += 1;
-  }
-  while (end > start && text.charAt(end - 1) === '/') {
-    end -= 1;
-  }
-  return text.slice(start, end);
+  const chars = Array.from(text, (char) => char);
+  const first = leading ? chars.findIndex((char) => char !== '/') : 0;
+  const last = chars.findLastIndex((char) => char !== '/');
+  return first === -1 || last < first
+    ? ''
+    : chars.slice(first, last + 1).join('');
 }
 
 /**

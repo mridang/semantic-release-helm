@@ -4,15 +4,15 @@
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
+import { ChartRepository } from './chart-repository.js';
+import { GitRepository } from './git-repository.js';
+import { RemoteUrl } from './remote-url.js';
+import { redactCredentials } from './utils/redact.js';
 import type { Chart } from './chart.js';
 import type { ChartPackage } from './chart-package.js';
-import { ChartRepository } from './chart-repository.js';
 import type { CommandContext } from './command-runner.js';
-import { GitRepository } from './git-repository.js';
 import type { Remote } from './remote.js';
-import { RemoteUrl } from './remote-url.js';
 import type { Author, Worktree } from './worktree.js';
-import { redactCredentials } from './utils/redact.js';
 
 /**
  * Check that gh-pages publishing can work: git is usable, the directory is a
@@ -156,15 +156,15 @@ export async function publishGhPages(
     readonly tag: string | undefined;
   },
 ): Promise<void> {
-  let repository = plan.repository;
-  for (const pkg of settings.packages) {
+  const repository = await settings.packages.reduce(async (pending, pkg) => {
+    const current = await pending;
     const tag = settings.tag ?? `v${pkg.version}`;
     const link = `${plan.releaseBase}/releases/download/${tag}/${pkg.fileName}`;
     const urls = [plan.releaseBase === undefined ? pkg.fileName : link];
-    repository = await (plan.url === undefined
-      ? repository.add(plan.chart, pkg, '', { urls })
-      : repository.add(plan.chart, pkg, plan.url));
-  }
+    return plan.url === undefined
+      ? current.add(plan.chart, pkg, '', { urls })
+      : current.add(plan.chart, pkg, plan.url);
+  }, Promise.resolve(plan.repository));
   await repository.save();
 
   const commit = await plan.worktree.commit(

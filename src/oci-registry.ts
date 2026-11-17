@@ -1,14 +1,14 @@
 /**
  * @file Pushes packaged Helm charts to an OCI registry.
  */
+import { quoteWord, shQuote } from './utils/shell.js';
 import type { ChartPackage } from './chart-package.js';
 import type { DockerImage } from './docker.js';
-import { quoteWord, shQuote } from './utils/shell.js';
 
 /**
  * A chart that was pushed to a registry.
  */
-const DIGEST_LINE = /Digest:\s*(sha256:[0-9a-f]+)/i;
+const DIGEST_LINE = /Digest:\s*(sha256:[0-9a-f]+)/iu;
 
 export interface PublishedChart {
   /** The repository it was pushed to, such as `oci://registry/charts`. */
@@ -82,12 +82,11 @@ export class OciRegistry {
    * The container environment: the password when there is one.
    * @returns The variables to pass.
    */
-  private environment(): Readonly<Record<string, string>> {
+  private environment() {
     const { password } = this.options;
-    if (password === undefined) {
-      return {};
-    }
-    return { [PASSWORD_ENV]: password };
+    return Object.fromEntries(
+      password === undefined ? [] : [[PASSWORD_ENV, password]],
+    );
   }
 
   /**

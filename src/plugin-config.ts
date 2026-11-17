@@ -2,7 +2,7 @@
  * @file Parses and validates the plugin configuration supplied to semantic-release.
  */
 // noinspection JSUnusedGlobalSymbols
-const OCI_SCHEME = /^oci:\/\//;
+const OCI_SCHEME = /^oci:\/\//u;
 
 export interface HelmPluginConfig {
   /**
@@ -106,7 +106,9 @@ export interface HelmPluginConfig {
  * @returns A `URL` instance or `undefined` if not parseable.
  */
 function parseOciAsHttp(repo?: string): URL | undefined {
-  if (!repo || repo.length === 0) return undefined;
+  if (!repo || repo.length === 0) {
+    return undefined;
+  }
   const replaced = repo.replace(OCI_SCHEME, 'http://');
   try {
     return new URL(replaced);
@@ -283,7 +285,9 @@ export class HelmConfig {
   getOciHostPort(): string | undefined {
     const host = this.getOciHost();
     const port = this.getOciPort();
-    if (!host) return undefined;
+    if (!host) {
+      return undefined;
+    }
     return typeof port === 'number' ? `${host}:${port}` : host;
   }
 }

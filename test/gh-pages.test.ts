@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { pathExists } from './utils/fs.js';
 import { describe, expect, it } from '@jest/globals';
 import yaml from 'yaml';
 import { Chart } from '../src/chart.js';
@@ -12,6 +11,7 @@ import {
   publishGhPages,
   verifyGhPages,
 } from '../src/gh-pages.js';
+import { pathExists } from './utils/fs.js';
 import { git } from './utils/git.js';
 import { fakeRunner, recordingLogger } from './utils/runner.js';
 import { withTemporaryDir } from './utils/tmpdir.js';
@@ -59,7 +59,8 @@ async function seedPages(repo: string, content: string): Promise<void> {
 const author = { name: 'Bot', email: 'bot@example.test' };
 
 /** No release tag, so release links use the package version. */
-let noTag: string | undefined;
+// eslint-disable-next-line sonarjs/no-undefined-assignment -- the tests need an explicit undefined to pass as an option
+const noTag: string | undefined = undefined;
 
 /** The context, and the chart, for a scenario's repository. */
 async function setup(repo: string) {

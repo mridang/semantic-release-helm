@@ -1,9 +1,11 @@
 import { describe, it, expect } from '@jest/globals';
-import { HelmConfig, type HelmPluginConfig } from '../src/plugin-config.js';
+import { HelmConfig } from '../src/plugin-config.js';
 import { withEnv } from './utils/withenv.js';
+import type { HelmPluginConfig } from '../src/plugin-config.js';
 
 /** An unset value, declared without a literal `undefined` so it can be passed explicitly. */
-let absent: undefined;
+// eslint-disable-next-line sonarjs/no-undefined-assignment -- the tests need an explicit undefined to pass as an option
+const absent = undefined;
 
 describe('HelmConfig', () => {
   it('defaults: only chartPath provided', () => {
