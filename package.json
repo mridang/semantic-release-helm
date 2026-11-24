@@ -80,6 +80,7 @@
     "access": "public"
   },
   "overrides": {
-    "@eslint/core": "1.2.1"
+    "@eslint/core": "1.2.1",
+    "minimatch": "^11.0.9"
   }
 }
